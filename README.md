@@ -9,7 +9,7 @@ It installs the official npm package, `@deepseek-ai/dsh`, into Linux—not a for
 
 ## 中文摘要
 
-這個 repo 提供一個可交給 agent 使用的 Skill，以及一個從 Windows 執行的安裝器。它會自動偵測 WSL2、選擇既有 Ubuntu、在 WSL 內準備 Linux Node.js，核對 npm 套件是否指向 DeepSeek 官方 repo，然後安裝解析後的**精確版本**。
+這個 repo 提供一個可交給 agent 使用的 Skill，以及一個從 Windows 執行的安裝器。它會自動偵測 WSL2、選擇既有 Ubuntu、在 WSL 內準備 Linux Node.js、確認 npm global prefix 可由一般使用者寫入，核對 npm 套件是否指向 DeepSeek 官方 repo，然後安裝解析後的**精確版本**。
 
 WSL2 的定位是「相容性優先」：讓 Windows 使用者更接近 DeepSeek 技術報告披露的 `bash + file-edit` code-agent 評測形態。這不是 DeepSeek 官方的 Windows/WSL 效能結論，也沒有公開的嚴格 A/B 測試證明模型在 Linux 上本質更強。
 
@@ -153,6 +153,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scrip
 |---|---|
 | Windows 11 x64 + current WSL2 + Ubuntu 24.04 | PowerShell parsing, Bash parsing, status path, root boundary, and dry-run package verification tested |
 | Existing Ubuntu WSL2 with Linux Node.js 24 | Status and exact-version npm metadata dry-run tested |
+| System Node under `/usr` with an unwritable npm global prefix | User-owned prefix selection dry-run and isolated profile-persistence regression-tested |
 | Fresh WSL install across administrator/reboot/first-run boundaries | Designed as a resumable flow; not automatically reboot-tested |
 | Windows 10 2004+ / ARM64 / non-Ubuntu distributions | Expected to require environment-specific validation; not claimed as tested |
 
@@ -168,6 +169,7 @@ Depending on the starting state, it may:
 - install missing Ubuntu `git`, `curl`, and CA certificates;
 - clone a pinned nvm Git tag, verify its expected commit, and install the current Node.js LTS for the Linux user;
 - add one marked nvm loader block to `~/.profile`, after backing it up;
+- when the effective npm global prefix is not user-writable, create `~/.local` and add one marked `NPM_CONFIG_PREFIX`/`PATH` block to `~/.profile`, after backing it up;
 - install an exact `@deepseek-ai/dsh` version into that user's Linux npm prefix;
 - write a version-only rollback record under `~/.local/state/deepseek-harness-wsl/`.
 
@@ -202,6 +204,20 @@ node -p process.platform
 ```
 
 Paths under `/mnt/c`, `/mnt/e`, or ending in `.exe`/`.cmd` are not accepted as the managed Linux Node installation.
+
+### npm cannot write `/usr/lib/node_modules`
+
+Ubuntu's system Node may be perfectly usable while its default npm global prefix is `/usr`, which a normal Linux user cannot modify. This is not a reason to use `sudo npm install --global`.
+
+Run status or preview with this Skill. The output should show the effective prefix, global root, writability, bin-path status, and package residue. During install/update, the helper preserves an existing writable user prefix; otherwise it selects `~/.local`, exports `NPM_CONFIG_PREFIX` for the managed npm process, adds `~/.local/bin` to the current `PATH`, and persists a marked block in `~/.profile` after backing it up.
+
+```bash
+npm prefix --global
+npm root --global
+command -v dsh
+```
+
+Do not fix this by changing ownership under `/usr`, running npm as root, or deleting a suspected partial package directory. If a package directory exists but npm reports no installed version, the helper reports it. Residue under an unwritable system prefix is left untouched; residue inside the selected user prefix is offered to npm's verified exact-version install for reconciliation.
 
 ### WSL network differs from Windows
 

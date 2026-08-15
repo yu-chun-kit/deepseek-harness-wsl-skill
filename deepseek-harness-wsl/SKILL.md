@@ -34,7 +34,7 @@ Resolve every relative resource path against this skill directory. Run the provi
    Omit `-AcceptPrerelease` once the resolved official `latest` version is stable. Use `-Distribution <exact-name>` when more than one non-Docker distribution exists.
 
 6. If Windows requests a reboot, stop and give the printed resume command. Never reboot automatically. If Ubuntu requests initial username/password creation, ask the user to complete that first-run locally, then rerun the same command. If an existing/imported distro has only root and no first-run UI, follow the explicit recovery procedure in [operations.md](references/operations.md); never invent or silently configure an account.
-7. Verify that WSL reports version 2, `node -p process.platform` reports `linux`, executables do not resolve under `/mnt/*`, the installed package version matches the resolved exact version, and `dsh --version` exits within the script timeout.
+7. Verify that WSL reports version 2, `node -p process.platform` reports `linux`, executables do not resolve under `/mnt/*`, the effective npm global prefix/root are writable by the Linux user, the prefix `bin` directory is on `PATH`, the installed package version matches the resolved exact version, and `dsh --version` exits within the script timeout.
 8. Start the Web UI only from a workspace the user chose. Prefer a Linux filesystem path such as `~/projects/...` for Linux-heavy agent work. Do not concatenate untrusted paths into `bash -lc`; pass variable paths positionally when automating.
 9. Tell the user to enter the DeepSeek API key directly in **Settings → Models**. Never request the key in chat, put it on a command line, echo it, or write it into the repository. Explain that official Harness stores it in `$DSH_HOME/.credentials.yaml` and returns only a redacted descriptor to the UI.
 10. Select **极简模式 / Minimal** when creating a Web session if the user wants the two-tool preset. Do not present `minimal` as a separate CLI entry mode.
@@ -44,6 +44,8 @@ Resolve every relative resource path against this skill directory. Run the provi
 - Use only `https://registry.npmjs.org/` unless the user explicitly requires a trusted enterprise registry.
 - Resolve a channel to an exact version, show current-to-target, verify the npm repository URL, then install the exact version. Do not use blind scheduled updates.
 - Keep TLS verification and npm integrity checks enabled. Never use `curl | bash`, `sudo npm -g`, `--force`, `curl -k`, or `strict-ssl=false`.
+- Treat a system Node at `/usr/bin/node` as valid, but never write npm global packages into an unwritable `/usr` prefix. Let the helper select and persist a user-owned `~/.local` prefix; do not fix npm `EACCES` with sudo or recursive ownership changes.
+- Report a package directory that exists without an npm-installed version as possible partial residue. Do not delete it automatically; retry the verified exact-version install and stop for review if npm cannot reconcile it.
 - Do not edit `.wslconfig`, `wsl.conf`, DNS, VPN, proxy, firewall, default distro, or global WSL networking. Diagnose and report instead.
 - Never unregister a distribution, delete a VHD/home/config, run a full `apt upgrade`, recursively change `/mnt/*` permissions, or stop unrelated Node processes.
 - Treat uninstalling Harness, removing Node, removing a distro, and disabling WSL as separate operations. The provided uninstall removes only the npm package and preserves user data.

@@ -44,7 +44,6 @@ confirm() {
 
 load_nvm() {
   local nvm_dir="${NVM_DIR:-"$HOME/.nvm"}"
-  local actual_nvm_commit
   if [[ -s "$nvm_dir/nvm.sh" ]]; then
     export NVM_DIR="$nvm_dir"
     # shellcheck source=/dev/null
@@ -98,6 +97,7 @@ ensure_node() {
   ensure_prerequisites
 
   local nvm_dir="${NVM_DIR:-"$HOME/.nvm"}"
+  local actual_nvm_commit
   if [[ -e "$nvm_dir" && ! -d "$nvm_dir/.git" ]]; then
     printf '%s exists but is not an nvm Git checkout; refusing to overwrite it.\n' "$nvm_dir" >&2
     return 1
@@ -135,6 +135,139 @@ ensure_node() {
   linux_node_is_compatible || { printf 'Installed Node.js failed Linux provenance checks.\n' >&2; return 1; }
 }
 
+npm_prefix_is_writable() {
+  local prefix="$1" global_root="$2" bin_dir="$1/bin"
+  if [[ $prefix == "$HOME" || $prefix == "$HOME/"* ]]; then
+    [[ -w $HOME ]] || return 1
+    [[ ! -e $prefix || -w $prefix ]] || return 1
+    [[ ! -e $global_root || -w $global_root ]] || return 1
+    return
+  fi
+  [[ -d $prefix && -w $prefix ]] || return 1
+  [[ -d $global_root && -w $global_root ]] || return 1
+  [[ -d $bin_dir && -w $bin_dir ]] || return 1
+}
+
+path_contains() {
+  case ":$PATH:" in
+    *":$1:"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+persist_npm_prefix() {
+  local prefix="$1" persist_prefix="$2"
+  local profile="$HOME/.profile"
+  local marker_begin='# >>> deepseek-harness-wsl npm prefix >>>'
+  local marker_end='# <<< deepseek-harness-wsl npm prefix <<<'
+
+  if grep -Fq "$marker_begin" "$profile" 2>/dev/null; then
+    if grep -Fq "export PATH=\"$prefix/bin:\$PATH\"" "$profile" &&
+       { [[ $persist_prefix == 0 ]] || grep -Fq "export NPM_CONFIG_PREFIX=\"$prefix\"" "$profile"; }; then
+      return 0
+    fi
+    printf 'Existing managed npm prefix block in %s does not match target %s; refusing to overwrite it.\n' "$profile" "$prefix" >&2
+    return 1
+  fi
+
+  [[ -f $profile ]] && cp -p "$profile" "$profile.deepseek-harness-wsl.bak.$(date +%Y%m%d%H%M%S)"
+  {
+    printf '\n%s\n' "$marker_begin"
+    if [[ $persist_prefix == 1 ]]; then
+      printf 'export NPM_CONFIG_PREFIX="%s"\n' "$prefix"
+    fi
+    printf 'case ":$PATH:" in *":%s/bin:"*) ;; *) export PATH="%s/bin:$PATH" ;; esac\n' "$prefix" "$prefix"
+    printf '%s\n' "$marker_end"
+  } >>"$profile"
+}
+
+configure_npm_prefix() {
+  local current_prefix global_root target_prefix persist_prefix=0 reason='' path_was_present=0
+  local original_package_dir original_version
+  current_prefix=$(npm prefix --global 2>/dev/null || true)
+  global_root=$(npm root --global 2>/dev/null || true)
+  [[ -n $current_prefix && -n $global_root ]] || { printf 'Unable to resolve npm global prefix/root.\n' >&2; return 1; }
+
+  target_prefix="$current_prefix"
+  path_contains "$current_prefix/bin" && path_was_present=1
+  if ! npm_prefix_is_writable "$current_prefix" "$global_root"; then
+    target_prefix="$HOME/.local"
+    persist_prefix=1
+    reason="effective npm prefix $current_prefix is not writable by $(id -un)"
+    if [[ $target_prefix == "$current_prefix" ]]; then
+      printf 'User npm prefix %s exists but is not writable; refusing to change ownership or use sudo.\n' "$target_prefix" >&2
+      return 1
+    fi
+  fi
+  if [[ $target_prefix == "$HOME/.local" ]]; then
+    persist_prefix=1
+  fi
+
+  if [[ $target_prefix != "$current_prefix" ]]; then
+    original_package_dir="$global_root/@deepseek-ai/dsh"
+    original_version=$(installed_version)
+    if [[ -e $original_package_dir && -z $original_version ]]; then
+      printf 'Warning:       unmanaged partial residue exists in unwritable prefix: %s\n' "$original_package_dir"
+      printf '               It will be left untouched while the user-owned prefix is installed.\n'
+    elif [[ -n $original_version ]]; then
+      printf 'Warning:       Harness %s exists in unwritable prefix %s.\n' "$original_version" "$current_prefix"
+      printf '               It will be left untouched; the user-owned prefix will take precedence in PATH.\n'
+    fi
+  fi
+
+  printf 'npm prefix:    %s\n' "$current_prefix"
+  printf 'npm root:      %s\n' "$global_root"
+  if [[ $target_prefix != "$current_prefix" ]]; then
+    printf 'Managed prefix:%s (%s)\n' " $target_prefix" "$reason"
+  else
+    printf 'Managed prefix: %s\n' "$target_prefix"
+  fi
+
+  if ((DRY_RUN)); then
+    if [[ $target_prefix != "$current_prefix" ]]; then
+      printf 'Would create %s/bin and %s/lib/node_modules without sudo.\n' "$target_prefix" "$target_prefix"
+    fi
+    if ((persist_prefix)); then
+      printf 'Would persist NPM_CONFIG_PREFIX=%s and prepend its bin directory in ~/.profile after a backup.\n' "$target_prefix"
+    elif ! path_contains "$target_prefix/bin"; then
+      printf 'Would prepend %s/bin in ~/.profile after a backup.\n' "$target_prefix"
+    fi
+    if ((persist_prefix)); then
+      export NPM_CONFIG_PREFIX="$target_prefix"
+    fi
+    export PATH="$target_prefix/bin:$PATH"
+    return 0
+  fi
+
+  if [[ $target_prefix != "$current_prefix" ]]; then
+    confirm "Use user-owned npm prefix $target_prefix instead of unwritable $current_prefix?" || return 1
+  fi
+  mkdir -p "$target_prefix/bin" "$target_prefix/lib/node_modules"
+  if ((persist_prefix)); then
+    export NPM_CONFIG_PREFIX="$target_prefix"
+  fi
+  if ! path_contains "$target_prefix/bin"; then
+    export PATH="$target_prefix/bin:$PATH"
+  fi
+  if ((persist_prefix)); then
+    persist_npm_prefix "$target_prefix" 1
+  elif ((path_was_present == 0)); then
+    persist_npm_prefix "$target_prefix" 0
+  fi
+}
+
+report_package_residue() {
+  local package_dir version
+  package_dir="$(npm root --global)/@deepseek-ai/dsh"
+  version=$(installed_version)
+  if [[ -e $package_dir && -z $version ]]; then
+    printf 'Warning:       package directory exists without an installed version: %s\n' "$package_dir"
+    printf '               It will not be deleted automatically; an exact-version npm install may reconcile it.\n'
+  else
+    printf 'Package path:  %s (%s)\n' "$package_dir" "${version:-not installed}"
+  fi
+}
+
 installed_version() {
   { npm list --global "$PACKAGE" --depth=0 --json 2>/dev/null || true; } |
     node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);console.log(j.dependencies?.[process.argv[1]]?.version||"")}catch{console.log("")}})' "$PACKAGE"
@@ -162,6 +295,8 @@ verify_metadata() {
 }
 
 show_status() {
+  local current_prefix global_root
+  load_nvm
   printf 'WSL kernel:    %s\n' "$(uname -r)"
   printf 'Architecture:  %s\n' "$(uname -m)"
   printf 'Linux user:    %s (uid %s)\n' "$(id -un)" "$(id -u)"
@@ -173,10 +308,24 @@ show_status() {
   else
     printf 'Node:          not found\n'
   fi
-  load_nvm
   if command -v npm >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
     printf 'npm:           %s (%s)\n' "$(npm --version)" "$(command -v npm)"
+    current_prefix=$(npm prefix --global 2>/dev/null || true)
+    global_root=$(npm root --global 2>/dev/null || true)
+    printf 'npm prefix:    %s\n' "$current_prefix"
+    printf 'npm root:      %s\n' "$global_root"
+    if npm_prefix_is_writable "$current_prefix" "$global_root"; then
+      printf 'npm writable:  yes\n'
+    else
+      printf 'npm writable:  no; install/update will use %s without sudo\n' "$HOME/.local"
+    fi
+    if path_contains "$current_prefix/bin"; then
+      printf 'npm bin PATH:  yes\n'
+    else
+      printf 'npm bin PATH:  no\n'
+    fi
     printf 'Harness:       %s\n' "$(installed_version)"
+    report_package_residue
   else
     printf 'npm/Harness:   not available\n'
   fi
@@ -196,6 +345,8 @@ fi
 load_nvm
 if [[ $ACTION == uninstall ]]; then
   ensure_node
+  configure_npm_prefix
+  report_package_residue
   current=$(installed_version)
   if [[ -z $current ]]; then
     printf '%s is not installed in the active Linux npm prefix.\n' "$PACKAGE"
@@ -212,6 +363,9 @@ if ! linux_node_is_compatible; then
   ensure_node || { ((DRY_RUN)) && exit 0; exit 5; }
 fi
 
+configure_npm_prefix
+report_package_residue
+
 target=$(resolve_target)
 [[ -n $target && $target != null ]] || { printf 'Could not resolve an npm target version.\n' >&2; exit 6; }
 verify_metadata "$target"
@@ -225,6 +379,10 @@ fi
 
 if [[ $current == "$target" ]]; then
   printf 'The requested exact version is already installed.\n'
+  if ((DRY_RUN)); then
+    printf 'No package-version change is needed; any prefix/PATH repair shown above remains preview-only.\n'
+    exit 0
+  fi
   show_status
   exit 0
 fi
