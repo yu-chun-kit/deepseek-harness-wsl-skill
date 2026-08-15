@@ -1,0 +1,8 @@
+The anchored bootstrap implementation is adapted from
+xiaobright/dsh-anchored-standard at commit
+6472c1c9431dcfd9072be23bff781b76fe7146c0, under the MIT License.
+
+Copyright (c) 2026 xiaobright
+Portions Copyright (c) 2026 DeepSeek
+
+https://github.com/xiaobright/dsh-anchored-standard

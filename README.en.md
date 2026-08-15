@@ -149,6 +149,29 @@ Start `dsh web`, create a session, and select **极简模式 / Minimal** in the 
 
 The preset intentionally presents a very small model-facing surface. Better results in that surface may reflect distribution matching, tool protocol, reasoning-trace handling, context policy, or shell behavior. Calling it proven "overfitting" requires controlled cross-harness ablations that are not currently public.
 
+## Experimental anchored modes
+
+Later community work suggests that the effect may involve the complete **first model request**: persona, tool catalog, output limit, and automatically injected context—not merely one system-prompt sentence. An Anchored Standard experiment exposed only Bash/`read` on request one and restored the full Standard catalog after the first tool call or reply. It scored 98 and 99 in two runs of one private frozen task. That is a useful lead, not a general benchmark or proof of a DeepSeek training bug.
+
+This project therefore includes an opt-in generator for separate copies of the currently installed official presets:
+
+- `Anchored Standard`: supported by the two community runs above;
+- `Anchored PTC / Code`: an unbenchmarked extrapolation of the mechanism;
+- `Anchored Cordis / Creator`: a diagnostic extrapolation that also loses Cordis's specialized system persona, so it is not recommended as a daily default.
+
+This is a script rather than a prompt template because an ordinary prompt cannot change the API-visible tool schema, first-request `max_tokens`, or Harness context injection. The generator never edits shipped presets or `node_modules`; it can regenerate managed copies after a Harness update.
+
+```powershell
+# Inspect and preview first; name -Distribution when multiple distros exist.
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\manage-anchored-presets.ps1 -Action status -Distribution Ubuntu -Mode all
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\manage-anchored-presets.ps1 -Action install -Distribution Ubuntu -Mode all -WhatIf
+
+# Install after accepting the experimental limits.
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\manage-anchored-presets.ps1 -Action install -Distribution Ubuntu -Mode all -Yes
+```
+
+Fully restart `dsh web`, create a blank session, and select an anchored preset. Do not switch an existing session into one. See [anchored-presets.md](deepseek-harness-wsl/references/anchored-presets.md) for mechanics, evidence tiers, updates, and removal boundaries.
+
 ## Safe updates and rollback
 
 Update through the same entry point:

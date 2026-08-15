@@ -1,0 +1,11 @@
+This repository contains an adapted implementation of the first-request bootstrap
+from xiaobright/dsh-anchored-standard, used under the MIT License.
+
+Copyright (c) 2026 xiaobright
+Portions Copyright (c) 2026 DeepSeek
+
+Source snapshot:
+https://github.com/xiaobright/dsh-anchored-standard/tree/6472c1c9431dcfd9072be23bff781b76fe7146c0
+
+Generated agent presets copy the user's locally installed official DeepSeek Harness
+preset. Those copied portions remain subject to the upstream DeepSeek Harness license.

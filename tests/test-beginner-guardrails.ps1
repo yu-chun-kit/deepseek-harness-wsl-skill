@@ -36,7 +36,7 @@ if (($installer + $readme + $resourceReference) -match '(?im)^\s*memory\s*=\s*2G
 if ($linuxHelper -notmatch 'major == 22 && minor >= 19 \|\| major >= 24') {
     throw 'Linux Node compatibility must follow the current official source support range.'
 }
-if ($readme -notmatch '-InstallWslIfMissing:\$true' -or $readme -notmatch 'Native Windows') {
+if ($readme -notmatch '-InstallWslIfMissing:\$true' -or $readme -notmatch '(Native Windows|原生 Windows)') {
     throw 'README must document the explicit WSL opt-in and native Windows choice.'
 }
 if ($resourceReference -notmatch 'all WSL2 distributions' -or $resourceReference -notmatch 'concurrent-session formula') {

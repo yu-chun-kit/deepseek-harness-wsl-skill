@@ -123,6 +123,29 @@ Copy-Item -LiteralPath .\deepseek-harness-wsl -Destination $destination -Recurse
 
 Minimal 中表现更好可能来自训练/评测分布匹配、工具协议、reasoning trace、上下文策略或 Shell 差异。没有受控的跨 Harness 消融实验，就不能把“过拟合”写成已证实事实。
 
+## 实验性 Anchored 模式
+
+后续社区实验发现，影响可能不只是一句 system prompt，而是**第一次请求**同时看到的 persona、工具目录、输出上限和自动注入上下文。一个 Anchored Standard 实验让首轮只看到 Bash/`read`，首个工具调用或回复后再恢复完整 Standard 工具；它在一个私有冻结任务的两次运行中得到 98/99。这是有价值的线索，但仍不是通用基准，也不能证明 DeepSeek 存在训练 bug。
+
+本项目因此提供可选脚本，为当前已安装的官方 preset 生成独立副本：
+
+- `Anchored Standard`：有上述单任务、两次运行的社区证据；
+- `Anchored PTC / Code`：同一机制的未验证外推；
+- `Anchored Cordis / Creator`：诊断用途外推，而且会失去 Cordis 原本的专用 system persona，不建议作为日常默认。
+
+它不是 prompt 模板，因为普通 prompt 无法改变 API 可见工具 schema、首轮 `max_tokens` 或 Harness 自动注入内容。脚本不会修改官方 preset 或 `node_modules`；Harness 更新后可以从新版本重新生成。
+
+```powershell
+# 先检查与预览；多发行版时必须写明 -Distribution
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\manage-anchored-presets.ps1 -Action status -Distribution Ubuntu -Mode all
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\manage-anchored-presets.ps1 -Action install -Distribution Ubuntu -Mode all -WhatIf
+
+# 接受实验边界后安装
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\manage-anchored-presets.ps1 -Action install -Distribution Ubuntu -Mode all -Yes
+```
+
+完全重启 `dsh web`，新建空白 session 后再选择 anchored preset；不要把已有 session 切换过去。完整原理、证据等级、更新与卸载边界见 [anchored-presets.md](deepseek-harness-wsl/references/anchored-presets.md)。
+
 ## 安全更新与回滚
 
 通过同一入口更新：
