@@ -1,0 +1,4 @@
+interface:
+  display_name: "DeepSeek Harness on WSL"
+  short_description: "Set up official DeepSeek Harness safely in WSL"
+  default_prompt: "Use $deepseek-harness-wsl to install or update the official DeepSeek Harness inside WSL."

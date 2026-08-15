@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+.credentials.yaml
+*.log
+
+# Local planning files used while authoring this repository.
+task_plan.md
+findings.md
+progress.md
