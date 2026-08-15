@@ -8,12 +8,14 @@
 - The public Harness minimal preset uses persistent Bash plus `str_replace_editor`, with the fixed system prompt `You are a helpful software engineer assistant.`
 - The public minimal preset was added after the V4 technical report. It aligns with the previously disclosed evaluation shape; it was not the public repository preset used during earlier model training.
 - Native Windows support exists. WSL is a compatibility-oriented path for reproducing Linux/Bash tool semantics, not the only supported platform.
+- DeepSeek's public Harness documentation does not publish a supported RAM minimum, a per-session memory figure, or a concurrent-session sizing formula.
 
 ## What is not established
 
 - No official controlled experiment proves that V4 Pro is overfit to the public DeepSeek Harness minimal preset.
 - No official Windows-versus-WSL/Linux comparison proves that the model is intrinsically better on Linux.
 - WSL does not run the cloud model locally or accelerate its inference. It changes the local harness, shell, filesystem, and tools.
+- A generic `memory=2GB` example is not a DeepSeek recommendation. WSL resource limits are global host settings, and sufficiency depends on local tools and subprocesses rather than only the number of chat tabs.
 - A prompt-sensitive result alone cannot distinguish training overfit from tool-schema matching, reasoning-trace handling, sampling, context management, or shell differences.
 
 Use language such as:

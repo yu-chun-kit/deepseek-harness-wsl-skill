@@ -84,11 +84,12 @@ load_nvm() {
 linux_node_is_compatible() {
   command -v node >/dev/null 2>&1 || return 1
   [[ $(node -p 'process.platform' 2>/dev/null) == linux ]] || return 1
-  local node_path major
+  local node_path major minor
   node_path=$(command -v node)
   [[ $node_path != /mnt/* && $node_path != *.exe ]] || return 1
   major=$(node -p 'Number(process.versions.node.split(".")[0])' 2>/dev/null)
-  ((major >= 20))
+  minor=$(node -p 'Number(process.versions.node.split(".")[1])' 2>/dev/null)
+  ((major == 22 && minor >= 19 || major >= 24))
 }
 
 linux_pnpm_is_usable() {
@@ -242,7 +243,7 @@ ensure_node() {
     return 0
   fi
   if ((SKIP_NODE_INSTALL)); then
-    printf 'Compatible Linux Node.js 20+ was not found and installation was disabled.\n' >&2
+    printf 'A Linux Node.js version in the current official source support range (22.19+ or 24+) was not found and installation was disabled.\n' >&2
     return 1
   fi
   if ((DRY_RUN)); then

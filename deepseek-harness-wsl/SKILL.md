@@ -11,22 +11,25 @@ Resolve every relative resource path against this skill directory. Run the provi
 
 ## Apply the workflow
 
-1. Read [operations.md](references/operations.md) before changing the host. Read [evidence-boundaries.md](references/evidence-boundaries.md) before explaining minimal mode, Linux, WSL, or overfitting claims.
+1. Read [operations.md](references/operations.md) before changing the host. Read [evidence-boundaries.md](references/evidence-boundaries.md) before explaining minimal mode, Linux, WSL, or overfitting claims. Read [resources.md](references/resources.md) when WSL is absent or the user asks about RAM, CPU, disk, startup impact, or concurrent sessions.
 2. Inspect Windows build, `wsl --status`, `wsl --version`, and `wsl --list --verbose`. Reuse an initialized WSL2 distribution when possible. If multiple non-Docker distributions exist, require an explicit selection. Do not change the default distribution or convert WSL1 automatically.
-3. Offer the relevant choices before mutation: exact distribution, `auto|npm|pnpm`, `latest|next|exact version`, native build-tools preflight, and normal or more patient bounded download settings. Use `auto`, `latest`, build-tools `auto`, four fetch retries, a 300-second request timeout, npm's normal 15 connections, and two exact-install attempts when the user does not care. `auto` preserves the package manager recorded by an earlier managed install; for a fresh install it uses an existing usable Linux pnpm and otherwise npm. Never treat a Windows pnpm under `/mnt/*` as usable.
-4. Run the status action first:
+3. When no usable WSL distribution exists, do not install one by default. Report host RAM/CPU/system-drive free space and offer two honest choices: native Windows with the official Node/npm package, or this WSL2 Bash-compatibility path. Explain the Ubuntu virtual disk, Linux account, possible elevation/reboot, and support burden. Require explicit `-InstallWslIfMissing:$true` for the latter. Do not present WSL as required or silently convert a status request into platform installation.
+4. Offer the relevant choices before mutation: exact distribution, `auto|npm|pnpm`, `latest|next|exact version`, native build-tools preflight, and normal or more patient bounded download settings. Use `auto`, `latest`, build-tools `auto`, four fetch retries, a 300-second request timeout, npm's normal 15 connections, and two exact-install attempts when the user does not care. `auto` preserves the package manager recorded by an earlier managed install; for a fresh install it uses an existing usable Linux pnpm and otherwise npm. Never treat a Windows pnpm under `/mnt/*` as usable.
+5. Run the status action first:
 
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-deepseek-harness-wsl.ps1 -Action status
    ```
 
-5. Preview installation when the user has not already requested installation explicitly:
+6. Preview installation when the user has not already requested installation explicitly:
 
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-deepseek-harness-wsl.ps1 -Action install -AcceptPrerelease -WhatIf
    ```
 
-6. Install after confirming the selected distribution, exact package version, package manager, download policy, prerelease status, and possible WSL/reboot boundary:
+   If WSL is absent and the user chose the WSL path, add `-InstallWslIfMissing:$true` to this preview. Without that explicit opt-in, the preview must stop after explaining the native Windows and WSL choices.
+
+7. Install after confirming the selected distribution, exact package version, package manager, download policy, prerelease status, and possible WSL/reboot boundary:
 
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-deepseek-harness-wsl.ps1 -Action install -AcceptPrerelease -Yes
@@ -34,11 +37,11 @@ Resolve every relative resource path against this skill directory. Run the provi
 
    Omit `-AcceptPrerelease` once the resolved official `latest` version is stable. Use `-Distribution <exact-name>` when more than one non-Docker distribution exists.
 
-7. If Windows requests a reboot, stop and give the printed resume command. Never reboot automatically. If Ubuntu requests initial username/password creation, ask the user to complete that first-run locally, then rerun the same command. If an existing/imported distro has only root and no first-run UI, follow the explicit recovery procedure in [operations.md](references/operations.md); never invent or silently configure an account.
-8. Verify that WSL reports version 2, `node -p process.platform` reports `linux`, executables do not resolve under `/mnt/*`, the selected package manager's global location is user-writable and on `PATH`, the installed package version matches the resolved exact version, and `dsh --version` exits within the script timeout.
-9. Start the Web UI only from a workspace the user chose. Prefer a Linux filesystem path such as `~/projects/...` for Linux-heavy agent work. Do not concatenate untrusted paths into `bash -lc`; pass variable paths positionally when automating.
-10. Tell the user to enter the DeepSeek API key directly in **Settings → Models**. Never request the key in chat, put it on a command line, echo it, or write it into the repository. Explain that official Harness stores it in `$DSH_HOME/.credentials.yaml` and returns only a redacted descriptor to the UI.
-11. Select **极简模式 / Minimal** when creating a Web session if the user wants the two-tool preset. Do not present `minimal` as a separate CLI entry mode.
+8. If Windows requests a reboot, stop and give the printed resume command. Never reboot automatically. If Ubuntu requests initial username/password creation, ask the user to complete that first-run locally, then rerun the same command. If an existing/imported distro has only root and no first-run UI, follow the explicit recovery procedure in [operations.md](references/operations.md); never invent or silently configure an account.
+9. Verify that WSL reports version 2, `node -p process.platform` reports `linux`, executables do not resolve under `/mnt/*`, the selected package manager's global location is user-writable and on `PATH`, the installed package version matches the resolved exact version, and `dsh --version` exits within the script timeout.
+10. Start the Web UI only from a workspace the user chose. Prefer a Linux filesystem path such as `~/projects/...` for Linux-heavy agent work. Do not concatenate untrusted paths into `bash -lc`; pass variable paths positionally when automating.
+11. Tell the user to enter the DeepSeek API key directly in **Settings → Models**. Never request the key in chat, put it on a command line, echo it, or write it into the repository. Explain that official Harness stores it in `$DSH_HOME/.credentials.yaml` and returns only a redacted descriptor to the UI.
+12. Select **极简模式 / Minimal** when creating a Web session if the user wants the two-tool preset. Do not present `minimal` as a separate CLI entry mode.
 
 ## Preserve boundaries
 
@@ -51,6 +54,7 @@ Resolve every relative resource path against this skill directory. Run the provi
 - Treat a system Node at `/usr/bin/node` as valid, but never write npm global packages into an unwritable `/usr` prefix. Let the helper select and persist a user-owned `~/.local` prefix; do not fix npm `EACCES` with sudo or recursive ownership changes.
 - Report a package directory that exists without a package-manager-installed version as possible partial residue. Do not delete it automatically; retry the verified exact-version install and stop for review if the selected manager cannot reconcile it.
 - Do not edit `.wslconfig`, `wsl.conf`, DNS, VPN, proxy, firewall, default distro, or global WSL networking. Diagnose and report instead.
+- Do not call `2GB` an official or generally sufficient Harness memory recommendation. DeepSeek publishes no supported RAM minimum or per-session sizing formula. Explain that `.wslconfig` limits are global to all WSL2 distributions and can constrain unrelated Docker/Linux work. Never create, read out, merge, or overwrite that file automatically.
 - Never unregister a distribution, delete a VHD/home/config, run a full `apt upgrade`, recursively change `/mnt/*` permissions, or stop unrelated Node processes.
 - Treat uninstalling Harness, removing Node, removing a distro, and disabling WSL as separate operations. The provided uninstall removes only the selected manager's Harness package and preserves user data.
 - Separate installation success, Web UI startup, API authentication, and paid model smoke tests. Never incur API cost without explicit opt-in.

@@ -9,7 +9,7 @@ It installs the official npm package, `@deepseek-ai/dsh`, into Linux—not a for
 
 ## 中文摘要
 
-這個 repo 提供一個可交給 agent 使用的 Skill，以及一個從 Windows 執行的安裝器。它會自動偵測 WSL2、選擇既有 Ubuntu、在 WSL 內準備 Linux Node.js、選擇安全可用的 npm 或 pnpm、核對套件是否指向 DeepSeek 官方 repo，然後安裝解析後的**精確版本**。
+這個 repo 提供一個可交給 agent 使用的 Skill，以及一個從 Windows 執行的安裝器。它會偵測 WSL2、優先重用既有 Ubuntu、在 WSL 內準備 Linux Node.js、選擇安全可用的 npm 或 pnpm、核對套件是否指向 DeepSeek 官方 repo，然後安裝解析後的**精確版本**。如果電腦尚未安裝 WSL，它只會說明選項；不會因為執行 `status` 或普通安裝命令就擅自新增 WSL。
 
 WSL2 的定位是「相容性優先」：讓 Windows 使用者更接近 DeepSeek 技術報告披露的 `bash + file-edit` code-agent 評測形態。這不是 DeepSeek 官方的 Windows/WSL 效能結論，也沒有公開的嚴格 A/B 測試證明模型在 Linux 上本質更強。
 
@@ -20,6 +20,28 @@ DeepSeek's V4 technical report describes code-agent evaluation with a minimal to
 Native Windows remains supported by Harness. WSL2 is recommended here because it gives Windows users Linux paths, permissions, signals, shell behavior, and common SWE/terminal tooling. It is a reproducibility and compatibility choice—not a model inference optimization.
 
 There is also an important timeline distinction: the public minimal preset landed after the V4 technical report. It is reasonable to say that the public preset aligns with the disclosed internal evaluation shape; it is not reasonable to claim that the model was trained against today's public preset.
+
+## Beginner decision: native Windows or WSL2?
+
+If WSL2 is already installed and used, reusing it is usually the lowest-friction path for this repository. If WSL2 is absent, choose deliberately:
+
+| Path | Best fit | Tradeoff |
+|---|---|---|
+| Native Windows | A beginner who wants the official Harness UI with the smallest platform change | Uses Windows/PowerShell semantics rather than the Bash environment this repository targets |
+| WSL2 | Someone who wants Linux/Bash tool compatibility and closer alignment with the disclosed Bash-based agent setup | Adds an Ubuntu environment, Linux account, virtual disk, resource usage, and possible reboot/support burden |
+
+DeepSeek documents the published CLI as a Node.js package and the official codebase has native Windows support. This repository intentionally implements only the WSL path; it does not claim that WSL is required.
+
+For the native Windows path, follow the official README: install a supported Windows Node.js, then run `npx @deepseek-ai/dsh web` in PowerShell. This Skill does not automate that separate path.
+
+Microsoft currently documents WSL2's default VM **limit** as 50% of Windows RAM, all logical processors, and swap equal to 25% of Windows RAM rounded up to the nearest GB. These are limits, not memory preallocated at Windows startup: usage grows and shrinks with the workload. WSL starts when WSL or a dependent application invokes it, then manages the VM lifecycle automatically. Open handles, settings, and idle management affect observed state; a Linux background service alone does not guarantee that the VM stays running.
+
+DeepSeek has not published a supported Harness RAM minimum, a per-session RAM figure, or a formula for several simultaneous conversations. Therefore this project does not label `memory=2GB` as recommended. A fixed 2 GiB cap may be enough for a light UI session on one machine and still fail when agent subprocesses compile native modules, run tests, or work in several active sessions; there is no official guarantee either way.
+
+Official engineering notes illustrate why a chat-count formula would mislead: one measurement attributed about 1.31 MB to each live standard agent and 57.8 MB to 50 such agents, while a separate restore profile for a 1.3-million-event session reached about 1,060 MiB peak RSS after optimization. Those are implementation measurements, not requirements, and neither accounts for arbitrary shell tools, builds, tests, or language servers launched by an agent.
+
+> [!CAUTION]
+> `%USERPROFILE%\.wslconfig` applies globally to all WSL2 distributions, not only Harness. A low cap can also constrain Docker Desktop or unrelated Linux work. This project reports whether that file exists but never reads, creates, merges, or overwrites it. Microsoft now recommends changing WSL resource settings through WSL Settings; make such a global change only after observing the actual workload.
 
 ## Quick start
 
@@ -41,6 +63,18 @@ Install or resume installation with one command:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\setup-deepseek-harness-wsl.ps1 -Action install -AcceptPrerelease -Yes
 ```
 
+If status reports that WSL is absent and you intentionally choose the WSL2 path, preview the platform addition first:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\setup-deepseek-harness-wsl.ps1 -Action install -InstallWslIfMissing:$true -AcceptPrerelease -WhatIf
+```
+
+Then rerun that command from an elevated PowerShell with `-Yes` instead of `-WhatIf`. The explicit `-InstallWslIfMissing:$true` is required only when adding WSL/Ubuntu; it is not needed once a usable distribution exists.
+
+The two platform paths use separate Node.js installations. A Windows Node.js installation serves native Windows Harness; it does not count as the Linux Node.js required inside WSL. If WSL is selected and Linux Node.js is absent, this installer previews and installs a compatible Linux Node.js under the Linux user's home rather than reusing `node.exe` through `/mnt/c`.
+
+The current official source-development range is Node.js 22.19+ or 24+, while the published CLI package currently does not declare its own `engines` field. This installer therefore uses the current official source range as its conservative compatibility floor and installs the current LTS when it must add Node. It does not mistake the source-only pnpm requirement for an npm-package requirement.
+
 The default `-PackageManager auto` preserves the manager recorded by an earlier managed install. On a fresh install it uses pnpm only when a Linux-native pnpm already has a writable user global directory; otherwise it falls back to npm. It never uses a Windows `pnpm` exposed through `/mnt/c` and does not bootstrap pnpm silently.
 
 DeepSeek's official distinction matters here: the published CLI is documented with `npx @deepseek-ai/dsh web`; `pnpm install`, `pnpm run build`, and `pnpm dsh web` are the repository-checkout workflow. The CLI also forwards profile plugin management to pnpm. This project supports an existing pnpm without claiming it is mandatory for the published package.
@@ -51,7 +85,7 @@ At the time this project was authored, npm's official `latest` tag still resolve
 
 ### Fresh Windows installation is resumable, not magically reboot-free
 
-If WSL or Ubuntu is not installed, the same command starts the official Windows WSL installation flow. Windows may require an administrator terminal and a reboot. Ubuntu may then require one local first-run to create the Linux username and password.
+If WSL or Ubuntu is not installed, the default command stops after showing host RAM/CPU/system-drive free space and the native-Windows-versus-WSL choice. Only the explicit `-InstallWslIfMissing:$true` form starts the official Windows WSL installation flow. Windows may require an administrator terminal and a reboot. Ubuntu may then require one local first-run to create the Linux username and password.
 
 The installer never self-elevates or reboots the computer. Complete the requested system step and rerun the same command; completed phases are reused.
 
@@ -157,7 +191,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scrip
 | `-Yes` | Accept the displayed package/prerequisite changes |
 | `-WhatIf` | Preview mutations; metadata checks may still use the network |
 | `-SkipNodeInstall` | Require a compatible existing Linux Node.js |
-| `-InstallWslIfMissing:$false` | Refuse to add WSL/distro automatically |
+| `-InstallWslIfMissing:$true` | Explicitly opt in to adding WSL/Ubuntu when none is usable; default is false |
 
 ## Support and validation matrix
 
@@ -169,6 +203,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scrip
 | Non-login npm/pnpm status and managed paths | New/legacy state, pnpm restoration, external/special-character prefixes, and exact `dsh` path regression-tested |
 | Native dependency and unstable downloads | Build-tools preflight plus bounded timeout/concurrency behavior covered by mock regression tests |
 | Fresh WSL install across administrator/reboot/first-run boundaries | Designed as a resumable flow; not automatically reboot-tested |
+| Harness RAM and concurrent-session sizing | No official minimum or formula published; no fixed `2GB` recommendation is made |
 | Windows 10 2004+ / ARM64 / non-Ubuntu distributions | Expected to require environment-specific validation; not claimed as tested |
 
 Static validation includes the Skill Creator validator. The scripts intentionally have no live Harness installation or paid API smoke test in their repository test path.
@@ -191,6 +226,8 @@ Depending on the starting state, it may:
 
 It does **not** change the default distro, convert WSL1, edit `.wslconfig`, alter VPN/DNS/firewall settings, expose the Web UI beyond localhost, store API keys, modify a project, delete Harness data, or unregister a distribution.
 
+The Windows-side status output includes total/available RAM, logical CPU count, free space on the system drive, WSL distributions currently reported as running, and only the presence or absence of `.wslconfig`. It does not infer which application started a distribution, dump that global configuration, or choose a cap. The Linux model itself remains in DeepSeek's cloud API; local resource use comes from WSL, Harness, tools, builds, tests, and other subprocesses.
+
 ## Secrets and permissions
 
 - Never paste a DeepSeek API key into an agent conversation or command-line argument.
@@ -199,6 +236,14 @@ It does **not** change the default distro, convert WSL1, edit `.wslconfig`, alte
 - API authentication and paid model calls are separate from installation verification. This project does not send a paid smoke-test request automatically.
 
 ## Troubleshooting
+
+### Windows feels slower or `vmmem` is large
+
+First check which distributions are actually running and whether Harness, Docker, tests, or other Linux background services are still active. Closing the Web UI tab does not necessarily terminate its server or its child processes.
+
+Do not immediately paste a generic `memory=2GB` block into `.wslconfig`. That cap is global, requires the WSL VM to restart before it applies, and has no DeepSeek-supported relationship to a number of conversations. Use Windows Task Manager, WSL Settings, and workload-specific process inspection to observe the peak first. `wsl --shutdown` terminates every running distribution, so this project never runs it automatically.
+
+WSL2 distributions store Linux files in dynamically expanding virtual disks. Deleting Linux files reduces guest-filesystem usage but does not guarantee that the host VHD file immediately shrinks. Follow Microsoft's current disk-space guide for the installed WSL version; do not manually delete or edit `ext4.vhdx`.
 
 ### Multiple WSL distributions
 
@@ -280,9 +325,16 @@ Removing Node.js, user settings, a WSL distribution, or WSL itself is intentiona
 ## Sources
 
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+- [DeepSeek Harness native Windows implementation note](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/feature/2026-08-01-windows-pwsh-default.md)
+- [DeepSeek Harness source development prerequisites](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/development.md)
+- [DeepSeek per-session agent measurements](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-08-03-per-session-agent-presets.md)
+- [DeepSeek large-session restore measurements](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-08-05-large-session-jsonl-restore-pipeline.md)
 - [Harness CLI behavior reference](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/cli/reference/README.md)
 - [DeepSeek V4 technical report](https://arxiv.org/html/2606.19348v1)
 - [Microsoft: Install WSL](https://learn.microsoft.com/windows/wsl/install)
+- [Microsoft: Advanced WSL settings and current defaults](https://learn.microsoft.com/windows/wsl/wsl-config)
+- [Microsoft: Manage WSL disk space](https://learn.microsoft.com/windows/wsl/disk-space)
+- [Microsoft: Basic WSL commands and shutdown scope](https://learn.microsoft.com/windows/wsl/basic-commands)
 - [Microsoft: Working across Windows and Linux filesystems](https://learn.microsoft.com/windows/wsl/filesystems)
 - [npm install documentation](https://docs.npmjs.com/cli/commands/npm-install/)
 - [npm configuration: fetch retries and timeouts](https://docs.npmjs.com/cli/using-npm/config/)

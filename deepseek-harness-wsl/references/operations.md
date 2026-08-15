@@ -3,7 +3,7 @@
 ## State transitions
 
 1. Inspect without mutation.
-2. If WSL is missing, install WSL and an Ubuntu LTS distribution from an elevated PowerShell. Stop at any reboot boundary.
+2. If WSL is missing, report status and stop by default. Offer native Windows or WSL2 after reading [resources.md](resources.md). Install WSL and an Ubuntu LTS distribution from an elevated PowerShell only after explicit `-InstallWslIfMissing:$true`. Stop at any reboot boundary.
 3. Let the user complete the distribution's first-run username and password prompt.
 4. Re-run the installer as the normal Windows user.
 5. Install Linux prerequisites with `sudo` only when missing. Refresh the apt package index before installing; do not run a full distribution upgrade.
@@ -30,7 +30,7 @@ The helper is idempotent. Re-running it reuses the selected distribution and exi
 - `-NativeBuildTools auto|skip`: preflight/install missing Ubuntu native build prerequisites, or explicitly accept the risk of skipping them.
 - `-AcceptPrerelease`: required when the resolved version contains a prerelease suffix.
 - `-Yes`: accept the displayed exact-version change and prerequisite installation.
-- `-InstallWslIfMissing:$false`: inspect without enabling/installing WSL.
+- `-InstallWslIfMissing:$true`: explicitly opt in to adding WSL/Ubuntu when none is usable; default is false.
 - `-SkipNodeInstall`: fail instead of installing Linux Node when it is missing or incompatible.
 - `-WhatIf`: report planned mutations. Network metadata checks may still occur.
 
@@ -45,6 +45,8 @@ The helper is idempotent. Re-running it reuses the selected distribution and exi
 - A version, package-manager, managed-prefix/bin rollback record is written with user-only permissions under `~/.local/state/deepseek-harness-wsl/`.
 
 The helper does not modify Windows networking, `.wslconfig`, the default distribution, project files, Harness credentials, or API keys.
+
+Before any new WSL installation, the Windows helper reports total/available RAM, logical CPUs, system-drive free space, currently running WSL distributions, and only whether `.wslconfig` exists. These values are context, not pass/fail thresholds. No official Harness minimum or concurrent-session sizing formula is available, so do not derive a cap or guarantee from them.
 
 Even when pnpm performs the global install, the helper uses npm bundled with the required Linux Node.js installation to resolve and verify official registry metadata. An existing pnpm is an install-manager option, not a replacement for the Node/npm identity check.
 
