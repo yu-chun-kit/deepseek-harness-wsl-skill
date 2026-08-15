@@ -5,7 +5,15 @@ param(
     [string]$Distribution,
     [ValidateSet('latest', 'next')]
     [string]$Channel = 'latest',
+    [ValidateSet('auto', 'npm', 'pnpm')]
+    [string]$PackageManager = 'auto',
     [string]$PackageVersion,
+    [ValidateRange(0, 10)]
+    [int]$FetchRetries = 4,
+    [ValidateRange(30, 900)]
+    [int]$FetchTimeoutSeconds = 300,
+    [ValidateRange(1, 3)]
+    [int]$DownloadAttempts = 2,
     [switch]$AcceptPrerelease,
     [switch]$Yes,
     [switch]$SkipNodeInstall,
@@ -82,7 +90,15 @@ if (-not (Test-Path -LiteralPath $windowsScriptPath)) {
     throw "Missing Linux helper: $windowsScriptPath"
 }
 
-$arguments = @('./setup-in-wsl.sh', '--action', $Action, '--channel', $Channel)
+$arguments = @(
+    './setup-in-wsl.sh',
+    '--action', $Action,
+    '--channel', $Channel,
+    '--package-manager', $PackageManager,
+    '--fetch-retries', $FetchRetries,
+    '--fetch-timeout-seconds', $FetchTimeoutSeconds,
+    '--download-attempts', $DownloadAttempts
+)
 if ($PackageVersion) { $arguments += @('--package-version', $PackageVersion) }
 if ($AcceptPrerelease) { $arguments += '--accept-prerelease' }
 if ($Yes) { $arguments += '--yes' }
@@ -91,6 +107,8 @@ if ($WhatIfPreference) { $arguments += '--dry-run' }
 
 Write-Host "Distribution: $selectedDistribution"
 Write-Host "Action:       $Action"
+Write-Host "Pkg manager:  $PackageManager"
+Write-Host "Network:      $FetchRetries fetch retries, ${FetchTimeoutSeconds}s timeout, $DownloadAttempts install attempt(s)"
 
 & wsl.exe --distribution $selectedDistribution --cd $PSScriptRoot -- bash @arguments
 $exitCode = $LASTEXITCODE

@@ -7,6 +7,11 @@ OFFICIAL_REPOSITORY='github.com/deepseek-ai/deepseek-harness'
 ACTION='install'
 CHANNEL='latest'
 PACKAGE_VERSION=''
+PACKAGE_MANAGER='auto'
+SELECTED_PACKAGE_MANAGER=''
+FETCH_RETRIES=4
+FETCH_TIMEOUT_SECONDS=300
+DOWNLOAD_ATTEMPTS=2
 NVM_VERSION='v0.40.6'
 NVM_COMMIT='18f62ba4e8e2148383332fb1ac8b2ff1ee21a263'
 ACCEPT_PRERELEASE=0
@@ -19,6 +24,10 @@ while (($#)); do
     --action) ACTION="$2"; shift 2 ;;
     --channel) CHANNEL="$2"; shift 2 ;;
     --package-version) PACKAGE_VERSION="$2"; shift 2 ;;
+    --package-manager) PACKAGE_MANAGER="$2"; shift 2 ;;
+    --fetch-retries) FETCH_RETRIES="$2"; shift 2 ;;
+    --fetch-timeout-seconds) FETCH_TIMEOUT_SECONDS="$2"; shift 2 ;;
+    --download-attempts) DOWNLOAD_ATTEMPTS="$2"; shift 2 ;;
     --accept-prerelease) ACCEPT_PRERELEASE=1; shift ;;
     --yes) ASSUME_YES=1; shift ;;
     --skip-node-install) SKIP_NODE_INSTALL=1; shift ;;
@@ -29,6 +38,17 @@ done
 
 case "$ACTION" in status|install|update|uninstall) ;; *) printf 'Invalid action: %s\n' "$ACTION" >&2; exit 2 ;; esac
 case "$CHANNEL" in latest|next) ;; *) printf 'Invalid channel: %s\n' "$CHANNEL" >&2; exit 2 ;; esac
+case "$PACKAGE_MANAGER" in auto|npm|pnpm) ;; *) printf 'Invalid package manager: %s\n' "$PACKAGE_MANAGER" >&2; exit 2 ;; esac
+[[ $FETCH_RETRIES =~ ^([0-9]|10)$ ]] || { printf 'Fetch retries must be from 0 through 10.\n' >&2; exit 2; }
+[[ $FETCH_TIMEOUT_SECONDS =~ ^[0-9]+$ ]] && ((FETCH_TIMEOUT_SECONDS >= 30 && FETCH_TIMEOUT_SECONDS <= 900)) || {
+  printf 'Fetch timeout must be from 30 through 900 seconds.\n' >&2; exit 2
+}
+[[ $DOWNLOAD_ATTEMPTS =~ ^[123]$ ]] || { printf 'Download attempts must be from 1 through 3.\n' >&2; exit 2; }
+
+export npm_config_fetch_retries="$FETCH_RETRIES"
+export npm_config_fetch_timeout="$((FETCH_TIMEOUT_SECONDS * 1000))"
+export npm_config_fetch_retry_mintimeout=10000
+export npm_config_fetch_retry_maxtimeout=60000
 
 if [[ ${EUID} -eq 0 && $ACTION != status && $DRY_RUN -eq 0 ]]; then
   printf 'Refusing to install Harness as root. Complete distro first-run and rerun as the normal Linux user.\n' >&2
@@ -59,6 +79,56 @@ linux_node_is_compatible() {
   [[ $node_path != /mnt/* && $node_path != *.exe ]] || return 1
   major=$(node -p 'Number(process.versions.node.split(".")[0])' 2>/dev/null)
   ((major >= 20))
+}
+
+linux_pnpm_is_usable() {
+  command -v pnpm >/dev/null 2>&1 || return 1
+  local pnpm_path global_bin
+  pnpm_path=$(command -v pnpm)
+  [[ $pnpm_path != /mnt/* && $pnpm_path != *.exe && $pnpm_path != *.cmd ]] || return 1
+  pnpm --version >/dev/null 2>&1 || return 1
+  global_bin=$(pnpm bin --global 2>/dev/null) || return 1
+  [[ -n $global_bin && $global_bin != /mnt/* ]] || return 1
+  [[ $global_bin == "$HOME" || $global_bin == "$HOME/"* ]] || return 1
+  [[ ! -e $global_bin || -w $global_bin ]] || return 1
+  path_contains "$global_bin" || return 1
+}
+
+select_package_manager() {
+  local state_file="$HOME/.local/state/deepseek-harness-wsl/last-install.json" recorded=''
+  case "$PACKAGE_MANAGER" in
+    npm) SELECTED_PACKAGE_MANAGER='npm' ;;
+    pnpm)
+      if ! linux_pnpm_is_usable; then
+        printf 'Explicit pnpm selection requires an existing Linux-native pnpm with a writable user global bin directory.\n' >&2
+        printf 'Install/configure pnpm separately from its official instructions, or use -PackageManager npm/auto.\n' >&2
+        return 1
+      fi
+      SELECTED_PACKAGE_MANAGER='pnpm'
+      ;;
+    auto)
+      if [[ -r $state_file ]]; then
+        recorded=$(node -e 'const fs=require("fs");try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));console.log(j.packageManager||"npm")}catch{}' "$state_file" 2>/dev/null || true)
+      fi
+      if [[ $recorded == pnpm ]]; then
+        if ! linux_pnpm_is_usable; then
+          printf 'The previous managed install used pnpm, but that Linux pnpm global location is no longer usable.\n' >&2
+          printf 'Repair pnpm or explicitly select npm after reviewing the migration; auto will not create a duplicate install.\n' >&2
+          return 1
+        fi
+        SELECTED_PACKAGE_MANAGER='pnpm'
+      elif [[ $recorded == npm ]]; then
+        SELECTED_PACKAGE_MANAGER='npm'
+      elif linux_pnpm_is_usable; then
+        SELECTED_PACKAGE_MANAGER='pnpm'
+      else
+        SELECTED_PACKAGE_MANAGER='npm'
+      fi
+      ;;
+  esac
+  printf 'Package manager: %s' "$SELECTED_PACKAGE_MANAGER"
+  if [[ $PACKAGE_MANAGER == auto ]]; then printf ' (auto-selected)'; fi
+  printf '\n'
 }
 
 ensure_prerequisites() {
@@ -258,19 +328,28 @@ configure_npm_prefix() {
 
 report_package_residue() {
   local package_dir version
-  package_dir="$(npm root --global)/@deepseek-ai/dsh"
+  if [[ $SELECTED_PACKAGE_MANAGER == pnpm ]]; then
+    package_dir="$(pnpm root --global)/@deepseek-ai/dsh"
+  else
+    package_dir="$(npm root --global)/@deepseek-ai/dsh"
+  fi
   version=$(installed_version)
   if [[ -e $package_dir && -z $version ]]; then
     printf 'Warning:       package directory exists without an installed version: %s\n' "$package_dir"
-    printf '               It will not be deleted automatically; an exact-version npm install may reconcile it.\n'
+    printf '               It will not be deleted automatically; an exact-version package-manager install may reconcile it.\n'
   else
     printf 'Package path:  %s (%s)\n' "$package_dir" "${version:-not installed}"
   fi
 }
 
 installed_version() {
-  { npm list --global "$PACKAGE" --depth=0 --json 2>/dev/null || true; } |
-    node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);console.log(j.dependencies?.[process.argv[1]]?.version||"")}catch{console.log("")}})' "$PACKAGE"
+  if [[ $SELECTED_PACKAGE_MANAGER == pnpm ]]; then
+    { pnpm list --global "$PACKAGE" --depth=0 --json 2>/dev/null || true; } |
+      node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{let j=JSON.parse(s);if(Array.isArray(j))j=j[0]||{};console.log(j.dependencies?.[process.argv[1]]?.version||j.devDependencies?.[process.argv[1]]?.version||"")}catch{console.log("")}})' "$PACKAGE"
+  else
+    { npm list --global "$PACKAGE" --depth=0 --json 2>/dev/null || true; } |
+      node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s);console.log(j.dependencies?.[process.argv[1]]?.version||"")}catch{console.log("")}})' "$PACKAGE"
+  fi
 }
 
 resolve_target() {
@@ -294,8 +373,40 @@ verify_metadata() {
   [[ -n $integrity && $integrity != null ]] || { printf 'Package integrity metadata is missing.\n' >&2; return 1; }
 }
 
+install_exact_version() {
+  local target="$1" attempt log_file
+  for ((attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt++)); do
+    log_file=$(mktemp)
+    printf 'Install attempt: %s/%s (fetch retries: %s, fetch timeout: %ss)\n' \
+      "$attempt" "$DOWNLOAD_ATTEMPTS" "$FETCH_RETRIES" "$FETCH_TIMEOUT_SECONDS"
+    if [[ $SELECTED_PACKAGE_MANAGER == pnpm ]]; then
+      if pnpm add --global --save-exact "$PACKAGE@$target" --registry="$REGISTRY" \
+        --fetch-retries="$FETCH_RETRIES" --fetch-timeout="$((FETCH_TIMEOUT_SECONDS * 1000))" 2>&1 | tee "$log_file"; then
+        rm -f "$log_file"
+        return 0
+      fi
+    else
+      if npm install --global "$PACKAGE@$target" --registry="$REGISTRY" \
+        --fetch-retries="$FETCH_RETRIES" --fetch-timeout="$((FETCH_TIMEOUT_SECONDS * 1000))" 2>&1 | tee "$log_file"; then
+        rm -f "$log_file"
+        return 0
+      fi
+    fi
+    if grep -Eqi 'ETIMEDOUT|ERR_SOCKET_TIMEOUT|socket timeout|network timeout|request.*timed out' "$log_file"; then
+      printf 'The registry metadata was verified, but a package tarball request timed out inside WSL.\n' >&2
+      printf 'TLS and the official registry remain unchanged. A package-manager switch is not guaranteed to fix this transport path.\n' >&2
+    fi
+    rm -f "$log_file"
+    if ((attempt < DOWNLOAD_ATTEMPTS)); then
+      printf 'Retrying the same verified exact version; the previous package-manager transaction failed.\n' >&2
+    fi
+  done
+  printf 'Installation failed after %s bounded attempt(s). Re-run after checking DNS/TLS from this WSL distribution, or increase the reviewed timeout within the supported limits.\n' "$DOWNLOAD_ATTEMPTS" >&2
+  return 1
+}
+
 show_status() {
-  local current_prefix global_root
+  local current_prefix global_root pnpm_bin
   load_nvm
   printf 'WSL kernel:    %s\n' "$(uname -r)"
   printf 'Architecture:  %s\n' "$(uname -m)"
@@ -324,10 +435,22 @@ show_status() {
     else
       printf 'npm bin PATH:  no\n'
     fi
-    printf 'Harness:       %s\n' "$(installed_version)"
-    report_package_residue
+    if [[ -z $SELECTED_PACKAGE_MANAGER ]]; then select_package_manager || true; fi
+    if [[ $SELECTED_PACKAGE_MANAGER == npm ]]; then
+      printf 'Harness:       %s\n' "$(installed_version)"
+      report_package_residue
+    fi
   else
     printf 'npm/Harness:   not available\n'
+  fi
+  if [[ $SELECTED_PACKAGE_MANAGER == pnpm ]]; then
+    pnpm_bin=$(pnpm bin --global 2>/dev/null || true)
+    printf 'pnpm:          %s (%s)\n' "$(pnpm --version)" "$(command -v pnpm)"
+    printf 'pnpm global:   %s\n' "$pnpm_bin"
+    printf 'Harness:       %s\n' "$(installed_version)"
+    report_package_residue
+  elif command -v pnpm >/dev/null 2>&1 && ! linux_pnpm_is_usable; then
+    printf 'pnpm:          found but rejected (must be Linux-native with a writable user global bin)\n'
   fi
   if command -v dsh >/dev/null 2>&1; then
     printf 'dsh path:      %s\n' "$(command -v dsh)"
@@ -345,17 +468,22 @@ fi
 load_nvm
 if [[ $ACTION == uninstall ]]; then
   ensure_node
-  configure_npm_prefix
+  select_package_manager
+  if [[ $SELECTED_PACKAGE_MANAGER == npm ]]; then configure_npm_prefix; fi
   report_package_residue
   current=$(installed_version)
   if [[ -z $current ]]; then
-    printf '%s is not installed in the active Linux npm prefix.\n' "$PACKAGE"
+    printf '%s is not installed through the selected %s global location.\n' "$PACKAGE" "$SELECTED_PACKAGE_MANAGER"
     exit 0
   fi
   printf 'Installed:     %s\n' "$current"
   ((DRY_RUN)) && { printf 'Would uninstall only %s; user data and Node.js would be preserved.\n' "$PACKAGE"; exit 0; }
   confirm "Uninstall $PACKAGE $current and preserve Harness data?" || exit 4
-  npm uninstall --global "$PACKAGE" --registry="$REGISTRY"
+  if [[ $SELECTED_PACKAGE_MANAGER == pnpm ]]; then
+    pnpm remove --global "$PACKAGE"
+  else
+    npm uninstall --global "$PACKAGE" --registry="$REGISTRY"
+  fi
   exit 0
 fi
 
@@ -363,7 +491,8 @@ if ! linux_node_is_compatible; then
   ensure_node || { ((DRY_RUN)) && exit 0; exit 5; }
 fi
 
-configure_npm_prefix
+select_package_manager
+if [[ $SELECTED_PACKAGE_MANAGER == npm ]]; then configure_npm_prefix; fi
 report_package_residue
 
 target=$(resolve_target)
@@ -389,16 +518,18 @@ fi
 
 if ((DRY_RUN)); then
   printf 'Would install exact version %s (current: %s).\n' "$target" "${current:-none}"
+  printf 'Would use %s with %s fetch retries, a %ss fetch timeout, and at most %s install attempt(s).\n' \
+    "$SELECTED_PACKAGE_MANAGER" "$FETCH_RETRIES" "$FETCH_TIMEOUT_SECONDS" "$DOWNLOAD_ATTEMPTS"
   exit 0
 fi
 
 confirm "Install exact version $PACKAGE@$target (current: ${current:-none})?" || exit 4
-npm install --global "$PACKAGE@$target" --registry="$REGISTRY"
+install_exact_version "$target"
 
 state_dir="$HOME/.local/state/deepseek-harness-wsl"
 mkdir -p "$state_dir"
-printf '{"previous":"%s","installed":"%s","timestamp":"%s"}\n' \
-  "${current:-}" "$target" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$state_dir/last-install.json"
+printf '{"previous":"%s","installed":"%s","packageManager":"%s","timestamp":"%s"}\n' \
+  "${current:-}" "$target" "$SELECTED_PACKAGE_MANAGER" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$state_dir/last-install.json"
 
 actual=$(installed_version)
 [[ $actual == "$target" ]] || { printf 'Installed version %s does not match target %s.\n' "$actual" "$target" >&2; exit 8; }

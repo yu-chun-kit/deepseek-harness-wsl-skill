@@ -13,19 +13,20 @@ Resolve every relative resource path against this skill directory. Run the provi
 
 1. Read [operations.md](references/operations.md) before changing the host. Read [evidence-boundaries.md](references/evidence-boundaries.md) before explaining minimal mode, Linux, WSL, or overfitting claims.
 2. Inspect Windows build, `wsl --status`, `wsl --version`, and `wsl --list --verbose`. Reuse an initialized WSL2 distribution when possible. If multiple non-Docker distributions exist, require an explicit selection. Do not change the default distribution or convert WSL1 automatically.
-3. Run the status action first:
+3. Offer the relevant choices before mutation: exact distribution, `auto|npm|pnpm`, `latest|next|exact version`, and normal or more patient bounded download settings. Use `auto`, `latest`, four fetch retries, a 300-second request timeout, and two exact-install attempts when the user does not care. `auto` preserves the package manager recorded by an earlier managed install; for a fresh install it uses an existing usable Linux pnpm and otherwise npm. Never treat a Windows pnpm under `/mnt/*` as usable.
+4. Run the status action first:
 
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-deepseek-harness-wsl.ps1 -Action status
    ```
 
-4. Preview installation when the user has not already requested installation explicitly:
+5. Preview installation when the user has not already requested installation explicitly:
 
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-deepseek-harness-wsl.ps1 -Action install -AcceptPrerelease -WhatIf
    ```
 
-5. Install after confirming the selected distribution, exact npm version, prerelease status, and possible WSL/reboot boundary:
+6. Install after confirming the selected distribution, exact package version, package manager, download policy, prerelease status, and possible WSL/reboot boundary:
 
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-deepseek-harness-wsl.ps1 -Action install -AcceptPrerelease -Yes
@@ -33,22 +34,24 @@ Resolve every relative resource path against this skill directory. Run the provi
 
    Omit `-AcceptPrerelease` once the resolved official `latest` version is stable. Use `-Distribution <exact-name>` when more than one non-Docker distribution exists.
 
-6. If Windows requests a reboot, stop and give the printed resume command. Never reboot automatically. If Ubuntu requests initial username/password creation, ask the user to complete that first-run locally, then rerun the same command. If an existing/imported distro has only root and no first-run UI, follow the explicit recovery procedure in [operations.md](references/operations.md); never invent or silently configure an account.
-7. Verify that WSL reports version 2, `node -p process.platform` reports `linux`, executables do not resolve under `/mnt/*`, the effective npm global prefix/root are writable by the Linux user, the prefix `bin` directory is on `PATH`, the installed package version matches the resolved exact version, and `dsh --version` exits within the script timeout.
-8. Start the Web UI only from a workspace the user chose. Prefer a Linux filesystem path such as `~/projects/...` for Linux-heavy agent work. Do not concatenate untrusted paths into `bash -lc`; pass variable paths positionally when automating.
-9. Tell the user to enter the DeepSeek API key directly in **Settings → Models**. Never request the key in chat, put it on a command line, echo it, or write it into the repository. Explain that official Harness stores it in `$DSH_HOME/.credentials.yaml` and returns only a redacted descriptor to the UI.
-10. Select **极简模式 / Minimal** when creating a Web session if the user wants the two-tool preset. Do not present `minimal` as a separate CLI entry mode.
+7. If Windows requests a reboot, stop and give the printed resume command. Never reboot automatically. If Ubuntu requests initial username/password creation, ask the user to complete that first-run locally, then rerun the same command. If an existing/imported distro has only root and no first-run UI, follow the explicit recovery procedure in [operations.md](references/operations.md); never invent or silently configure an account.
+8. Verify that WSL reports version 2, `node -p process.platform` reports `linux`, executables do not resolve under `/mnt/*`, the selected package manager's global location is user-writable and on `PATH`, the installed package version matches the resolved exact version, and `dsh --version` exits within the script timeout.
+9. Start the Web UI only from a workspace the user chose. Prefer a Linux filesystem path such as `~/projects/...` for Linux-heavy agent work. Do not concatenate untrusted paths into `bash -lc`; pass variable paths positionally when automating.
+10. Tell the user to enter the DeepSeek API key directly in **Settings → Models**. Never request the key in chat, put it on a command line, echo it, or write it into the repository. Explain that official Harness stores it in `$DSH_HOME/.credentials.yaml` and returns only a redacted descriptor to the UI.
+11. Select **极简模式 / Minimal** when creating a Web session if the user wants the two-tool preset. Do not present `minimal` as a separate CLI entry mode.
 
 ## Preserve boundaries
 
 - Use only `https://registry.npmjs.org/` unless the user explicitly requires a trusted enterprise registry.
 - Resolve a channel to an exact version, show current-to-target, verify the npm repository URL, then install the exact version. Do not use blind scheduled updates.
 - Keep TLS verification and npm integrity checks enabled. Never use `curl | bash`, `sudo npm -g`, `--force`, `curl -k`, or `strict-ssl=false`.
+- Distinguish official usage modes: DeepSeek documents npm/npx for running the published CLI and pnpm for a source checkout and profile plugin management. Do not claim that pnpm is mandatory for the published package. Do not install pnpm automatically merely because `auto` was selected.
+- When metadata/ping succeeds but a `.tgz` request times out, classify it as a WSL-to-registry transport failure. Retry only the same verified exact version within the selected bounds. Do not clear the cache forcibly, change registries, disable TLS, or promise that switching npm/pnpm will fix the network path.
 - Treat a system Node at `/usr/bin/node` as valid, but never write npm global packages into an unwritable `/usr` prefix. Let the helper select and persist a user-owned `~/.local` prefix; do not fix npm `EACCES` with sudo or recursive ownership changes.
-- Report a package directory that exists without an npm-installed version as possible partial residue. Do not delete it automatically; retry the verified exact-version install and stop for review if npm cannot reconcile it.
+- Report a package directory that exists without a package-manager-installed version as possible partial residue. Do not delete it automatically; retry the verified exact-version install and stop for review if the selected manager cannot reconcile it.
 - Do not edit `.wslconfig`, `wsl.conf`, DNS, VPN, proxy, firewall, default distro, or global WSL networking. Diagnose and report instead.
 - Never unregister a distribution, delete a VHD/home/config, run a full `apt upgrade`, recursively change `/mnt/*` permissions, or stop unrelated Node processes.
-- Treat uninstalling Harness, removing Node, removing a distro, and disabling WSL as separate operations. The provided uninstall removes only the npm package and preserves user data.
+- Treat uninstalling Harness, removing Node, removing a distro, and disabling WSL as separate operations. The provided uninstall removes only the selected manager's Harness package and preserves user data.
 - Separate installation success, Web UI startup, API authentication, and paid model smoke tests. Never incur API cost without explicit opt-in.
 
 ## Update and roll back

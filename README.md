@@ -9,7 +9,7 @@ It installs the official npm package, `@deepseek-ai/dsh`, into Linux—not a for
 
 ## 中文摘要
 
-這個 repo 提供一個可交給 agent 使用的 Skill，以及一個從 Windows 執行的安裝器。它會自動偵測 WSL2、選擇既有 Ubuntu、在 WSL 內準備 Linux Node.js、確認 npm global prefix 可由一般使用者寫入，核對 npm 套件是否指向 DeepSeek 官方 repo，然後安裝解析後的**精確版本**。
+這個 repo 提供一個可交給 agent 使用的 Skill，以及一個從 Windows 執行的安裝器。它會自動偵測 WSL2、選擇既有 Ubuntu、在 WSL 內準備 Linux Node.js、選擇安全可用的 npm 或 pnpm、核對套件是否指向 DeepSeek 官方 repo，然後安裝解析後的**精確版本**。
 
 WSL2 的定位是「相容性優先」：讓 Windows 使用者更接近 DeepSeek 技術報告披露的 `bash + file-edit` code-agent 評測形態。這不是 DeepSeek 官方的 Windows/WSL 效能結論，也沒有公開的嚴格 A/B 測試證明模型在 Linux 上本質更強。
 
@@ -40,6 +40,10 @@ Install or resume installation with one command:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\setup-deepseek-harness-wsl.ps1 -Action install -AcceptPrerelease -Yes
 ```
+
+The default `-PackageManager auto` preserves the manager recorded by an earlier managed install. On a fresh install it uses pnpm only when a Linux-native pnpm already has a writable user global directory; otherwise it falls back to npm. It never uses a Windows `pnpm` exposed through `/mnt/c` and does not bootstrap pnpm silently.
+
+DeepSeek's official distinction matters here: the published CLI is documented with `npx @deepseek-ai/dsh web`; `pnpm install`, `pnpm run build`, and `pnpm dsh web` are the repository-checkout workflow. The CLI also forwards profile plugin management to pnpm. This project supports an existing pnpm without claiming it is mandatory for the published package.
 
 At the time this project was authored, npm's official `latest` tag still resolved to an RC build, which is why the example explicitly includes `-AcceptPrerelease`. Remove that switch when `latest` resolves to a stable release.
 
@@ -137,10 +141,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scrip
 | `-Action status` | Inspect without installing |
 | `-Action install` | Install or resume |
 | `-Action update` | Resolve and install the selected current channel |
-| `-Action uninstall` | Remove only the npm package; preserve data, Node, distro, and WSL |
+| `-Action uninstall` | Remove only Harness through the selected manager; preserve data, Node, distro, and WSL |
 | `-Distribution <name>` | Use one exact installed WSL distribution |
 | `-Channel latest\|next` | Select an npm dist-tag before exact-version resolution |
+| `-PackageManager auto\|npm\|pnpm` | Preserve the recorded manager; otherwise use existing usable Linux pnpm or fall back to npm |
 | `-PackageVersion <semver>` | Install one exact version |
+| `-FetchRetries 0..10` | Fetch retries for this run only; default 4 |
+| `-FetchTimeoutSeconds 30..900` | Per-request network timeout for this run; default 300 seconds |
+| `-DownloadAttempts 1..3` | Attempts for the same verified exact version; default 2 |
 | `-AcceptPrerelease` | Explicitly allow RC/beta versions |
 | `-Yes` | Accept the displayed package/prerequisite changes |
 | `-WhatIf` | Preview mutations; metadata checks may still use the network |
@@ -171,7 +179,8 @@ Depending on the starting state, it may:
 - add one marked nvm loader block to `~/.profile`, after backing it up;
 - when the effective npm global prefix is not user-writable, create `~/.local` and add one marked `NPM_CONFIG_PREFIX`/`PATH` block to `~/.profile`, after backing it up;
 - install an exact `@deepseek-ai/dsh` version into that user's Linux npm prefix;
-- write a version-only rollback record under `~/.local/state/deepseek-harness-wsl/`.
+- or, when selected, use an already configured Linux pnpm whose global bin is writable inside that user's home;
+- write a version-and-package-manager rollback record under `~/.local/state/deepseek-harness-wsl/`.
 
 It does **not** change the default distro, convert WSL1, edit `.wslconfig`, alter VPN/DNS/firewall settings, expose the Web UI beyond localhost, store API keys, modify a project, delete Harness data, or unregister a distribution.
 
@@ -223,13 +232,23 @@ Do not fix this by changing ownership under `/usr`, running npm as root, or dele
 
 Test DNS and HTTPS from inside the selected distribution. Windows connectivity does not prove WSL connectivity. This project will not disable TLS checks or rewrite DNS, proxy, VPN, firewall, `/etc/wsl.conf`, or `.wslconfig` automatically.
 
+If package metadata and `npm ping` work but one dependency tarball such as `*.tgz` times out, those results are not contradictory: metadata and tarballs are separate HTTP requests and may take different network/cache paths. The installer retries only the already verified exact Harness version, with bounded per-process settings. It reports a tarball timeout separately and leaves the official registry, TLS checks, and cache protections intact.
+
+For a more patient retry without changing persistent npm/pnpm configuration:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\setup-deepseek-harness-wsl.ps1 -Action install -FetchRetries 6 -FetchTimeoutSeconds 600 -DownloadAttempts 3 -AcceptPrerelease -Yes
+```
+
+Do not use `npm cache clean --force`, an unofficial mirror, `strict-ssl=false`, or `curl -k`. Switching to pnpm is an installation-policy choice, not a guarantee of a different network route to the same registry tarballs.
+
 ### `dsh --help` appears stuck
 
 Developer-preview CLI behavior can change. Verification uses a timeout around `dsh --version` and does not kill unrelated Node processes.
 
 ## Uninstall
 
-Remove only Harness from the selected Linux npm prefix:
+Remove only Harness from the selected Linux package-manager location:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\setup-deepseek-harness-wsl.ps1 -Action uninstall -Yes
@@ -245,6 +264,9 @@ Removing Node.js, user settings, a WSL distribution, or WSL itself is intentiona
 - [Microsoft: Install WSL](https://learn.microsoft.com/windows/wsl/install)
 - [Microsoft: Working across Windows and Linux filesystems](https://learn.microsoft.com/windows/wsl/filesystems)
 - [npm install documentation](https://docs.npmjs.com/cli/commands/npm-install/)
+- [npm configuration: fetch retries and timeouts](https://docs.npmjs.com/cli/using-npm/config/)
+- [pnpm setup and global bin behavior](https://pnpm.io/cli/setup)
+- [pnpm request settings](https://pnpm.io/settings#request-settings)
 
 ## License
 

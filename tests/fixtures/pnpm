@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+case "${1:-}" in
+  --version)
+    printf '11.7.0\n'
+    ;;
+  bin)
+    printf '%s/.local/share/pnpm\n' "$HOME"
+    ;;
+  root)
+    printf '%s/.local/share/pnpm/global/node_modules\n' "$HOME"
+    ;;
+  list)
+    printf '[]\n'
+    ;;
+  *)
+    printf 'Unexpected mock pnpm arguments: %s\n' "$*" >&2
+    exit 2
+    ;;
+esac

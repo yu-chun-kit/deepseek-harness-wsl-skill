@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+case "${1:-}" in
+  --version)
+    printf '11.6.2\n'
+    ;;
+  prefix)
+    printf '%s/.local\n' "$HOME"
+    ;;
+  root)
+    printf '%s/.local/lib/node_modules\n' "$HOME"
+    ;;
+  list)
+    printf '{"dependencies":{}}\n'
+    ;;
+  view)
+    case "$*" in
+      *dist-tags.latest*) printf '"1.2.3"\n' ;;
+      *repository.url*) printf '"git+https://github.com/deepseek-ai/deepseek-harness.git"\n' ;;
+      *dist.integrity*) printf '"sha512-test-integrity"\n' ;;
+      *) exit 2 ;;
+    esac
+    ;;
+  install)
+    printf 'npm error code ETIMEDOUT\n' >&2
+    printf 'npm error request to https://registry.npmjs.org/hasown/-/hasown-2.0.4.tgz timed out\n' >&2
+    exit 1
+    ;;
+  *)
+    printf 'Unexpected mock npm arguments: %s\n' "$*" >&2
+    exit 2
+    ;;
+esac
