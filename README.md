@@ -1,123 +1,109 @@
-# DeepSeek Harness on WSL — Codex Skill and Installer
+# 在 WSL 中运行 DeepSeek Harness — Codex Skill 与安装器
 
-A community-maintained Codex skill and resumable PowerShell installer for running the **official [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)** inside WSL2 on Windows.
+**简体中文** | [繁體中文](README.zh-TW.md) | [English](README.en.md)
 
-It installs the official npm package, `@deepseek-ai/dsh`, into Linux—not a fork, wrapper model, or similarly named third-party harness.
+这是一个社区维护的 Codex Skill 和可恢复执行的 PowerShell 安装器，用于在 Windows 的 WSL2 中安全安装、更新和检查 DeepSeek 官方的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)。
+
+它安装的是 npm 官方包 `@deepseek-ai/dsh`，不是分叉版本、模型包装器或名称相似的第三方 Harness。
 
 > [!IMPORTANT]
-> This is an unofficial community project. DeepSeek Harness itself is currently a developer preview and may introduce breaking changes. This repository does not claim that DeepSeek-V4-Pro is proven to be overfit to Harness, or that Linux makes the model intrinsically smarter.
+> 本项目不是 DeepSeek 官方 Skill。DeepSeek Harness 目前仍处于 Developer Preview，未来可能出现破坏兼容性的更新。本项目不声称 DeepSeek-V4-Pro 已被证明“过拟合 Harness”，也不声称 Linux 会让模型本身变得更聪明。
 
-## 中文摘要
+## 为什么使用 WSL？
 
-這個 repo 提供一個可交給 agent 使用的 Skill，以及一個從 Windows 執行的安裝器。它會偵測 WSL2、優先重用既有 Ubuntu、在 WSL 內準備 Linux Node.js、選擇安全可用的 npm 或 pnpm、核對套件是否指向 DeepSeek 官方 repo，然後安裝解析後的**精確版本**。如果電腦尚未安裝 WSL，它只會說明選項；不會因為執行 `status` 或普通安裝命令就擅自新增 WSL。
+DeepSeek V4 技术报告披露的 code-agent 评测使用了 Bash 和文件编辑工具。公开 Harness 的 Minimal preset 也采用 persistent Bash 与 `str_replace_editor`。
 
-WSL2 的定位是「相容性優先」：讓 Windows 使用者更接近 DeepSeek 技術報告披露的 `bash + file-edit` code-agent 評測形態。這不是 DeepSeek 官方的 Windows/WSL 效能結論，也沒有公開的嚴格 A/B 測試證明模型在 Linux 上本質更強。
+Harness 同样支持原生 Windows。本项目推荐 WSL2，是为了获得更接近 Linux 的路径、权限、信号、Shell 行为和常见 SWE/terminal 工具；这是兼容性和可复现性选择，不是模型推理加速。
 
-## Why WSL?
+公开 Minimal preset 晚于 V4 技术报告出现。合理的说法是它与报告披露的内部评测形态相似，而不是模型训练时直接使用了今天公开仓库里的 preset。
 
-DeepSeek's V4 technical report describes code-agent evaluation with a minimal tool set consisting of Bash and a file-edit tool. The public Harness minimal preset similarly uses persistent Bash and `str_replace_editor`.
+## 新手先选：原生 Windows 还是 WSL2？
 
-Native Windows remains supported by Harness. WSL2 is recommended here because it gives Windows users Linux paths, permissions, signals, shell behavior, and common SWE/terminal tooling. It is a reproducibility and compatibility choice—not a model inference optimization.
+如果电脑已经在使用 WSL2，复用现有 Ubuntu 通常最省事。如果从未安装 WSL，请先明确选择：
 
-There is also an important timeline distinction: the public minimal preset landed after the V4 technical report. It is reasonable to say that the public preset aligns with the disclosed internal evaluation shape; it is not reasonable to claim that the model was trained against today's public preset.
-
-## Beginner decision: native Windows or WSL2?
-
-If WSL2 is already installed and used, reusing it is usually the lowest-friction path for this repository. If WSL2 is absent, choose deliberately:
-
-| Path | Best fit | Tradeoff |
+| 方案 | 适合谁 | 代价 |
 |---|---|---|
-| Native Windows | A beginner who wants the official Harness UI with the smallest platform change | Uses Windows/PowerShell semantics rather than the Bash environment this repository targets |
-| WSL2 | Someone who wants Linux/Bash tool compatibility and closer alignment with the disclosed Bash-based agent setup | Adds an Ubuntu environment, Linux account, virtual disk, resource usage, and possible reboot/support burden |
+| 原生 Windows | 只想使用官方 Harness UI，并希望尽量少改系统的新手 | 使用 PowerShell/Windows 语义，而不是本项目面向的 Bash 环境 |
+| WSL2 | 需要 Linux/Bash 工具兼容性，希望更接近已披露评测环境的用户 | 会新增 Ubuntu、Linux 账号、虚拟磁盘，并可能需要管理员权限和重启 |
 
-DeepSeek documents the published CLI as a Node.js package and the official codebase has native Windows support. This repository intentionally implements only the WSL path; it does not claim that WSL is required.
+原生 Windows 路径请按照官方 README：安装受支持的 Windows Node.js，然后在 PowerShell 中运行 `npx @deepseek-ai/dsh web`。本 Skill 只自动化 WSL 路径，不声称 WSL 是必需的。
 
-For the native Windows path, follow the official README: install a supported Windows Node.js, then run `npx @deepseek-ai/dsh web` in PowerShell. This Skill does not automate that separate path.
+Microsoft 当前公布的 WSL2 默认 VM 上限为：Windows 总内存的 50%、全部逻辑处理器，以及 Windows 内存 25%（向上取到最接近的 GB）的 swap。这些是上限，并非 Windows 开机时立即预占。WSL 在被命令或依赖应用调用时启动，之后由 WSL 管理 VM 生命周期。
 
-Microsoft currently documents WSL2's default VM **limit** as 50% of Windows RAM, all logical processors, and swap equal to 25% of Windows RAM rounded up to the nearest GB. These are limits, not memory preallocated at Windows startup: usage grows and shrinks with the workload. WSL starts when WSL or a dependent application invokes it, then manages the VM lifecycle automatically. Open handles, settings, and idle management affect observed state; a Linux background service alone does not guarantee that the VM stays running.
-
-DeepSeek has not published a supported Harness RAM minimum, a per-session RAM figure, or a formula for several simultaneous conversations. Therefore this project does not label `memory=2GB` as recommended. A fixed 2 GiB cap may be enough for a light UI session on one machine and still fail when agent subprocesses compile native modules, run tests, or work in several active sessions; there is no official guarantee either way.
-
-Official engineering notes illustrate why a chat-count formula would mislead: one measurement attributed about 1.31 MB to each live standard agent and 57.8 MB to 50 such agents, while a separate restore profile for a 1.3-million-event session reached about 1,060 MiB peak RSS after optimization. Those are implementation measurements, not requirements, and neither accounts for arbitrary shell tools, builds, tests, or language servers launched by an agent.
+DeepSeek 没有公布 Harness 的最低 RAM、每个 session 的 RAM 或多会话计算公式，因此本项目不会把 `memory=2GB` 标为推荐值。官方工程笔记曾测得 50 个 standard agents 约占 57.8 MB；另一项 130 万事件大型 session 恢复测试的优化后峰值 RSS 约为 1,060 MiB。两者都是特定实现测量，不是系统要求，也不包括 agent 启动的编译、测试和语言服务器等工作负载。
 
 > [!CAUTION]
-> `%USERPROFILE%\.wslconfig` applies globally to all WSL2 distributions, not only Harness. A low cap can also constrain Docker Desktop or unrelated Linux work. This project reports whether that file exists but never reads, creates, merges, or overwrites it. Microsoft now recommends changing WSL resource settings through WSL Settings; make such a global change only after observing the actual workload.
+> `%USERPROFILE%\.wslconfig` 会影响所有 WSL2 发行版，包括 Docker Desktop 和其他 Linux 工作。本项目只报告该文件是否存在，绝不会自动读取内容、创建、合并或覆盖它，也不会自动套用 2GB 上限。
 
-## Quick start
+## 快速开始
 
-Clone or download this repository, open PowerShell in its root, then inspect the current state:
+克隆或下载本仓库，在仓库根目录打开 PowerShell，先检查当前状态：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\setup-deepseek-harness-wsl.ps1 -Action status
 ```
 
-Preview changes:
+预览将要发生的改动：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\setup-deepseek-harness-wsl.ps1 -Action install -AcceptPrerelease -WhatIf
 ```
 
-Install or resume installation with one command:
+安装或继续之前中断的安装：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\setup-deepseek-harness-wsl.ps1 -Action install -AcceptPrerelease -Yes
 ```
 
-If status reports that WSL is absent and you intentionally choose the WSL2 path, preview the platform addition first:
+如果状态检查显示尚未安装 WSL，并且你明确选择 WSL2 路径，先预览平台安装：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\setup-deepseek-harness-wsl.ps1 -Action install -InstallWslIfMissing:$true -AcceptPrerelease -WhatIf
 ```
 
-Then rerun that command from an elevated PowerShell with `-Yes` instead of `-WhatIf`. The explicit `-InstallWslIfMissing:$true` is required only when adding WSL/Ubuntu; it is not needed once a usable distribution exists.
+确认后，在管理员 PowerShell 中把 `-WhatIf` 换成 `-Yes` 再运行。只有首次新增 WSL/Ubuntu 时需要显式提供 `-InstallWslIfMissing:$true`。
 
-The two platform paths use separate Node.js installations. A Windows Node.js installation serves native Windows Harness; it does not count as the Linux Node.js required inside WSL. If WSL is selected and Linux Node.js is absent, this installer previews and installs a compatible Linux Node.js under the Linux user's home rather than reusing `node.exe` through `/mnt/c`.
+Windows Node.js 与 WSL Linux Node.js 是两个独立安装。选择 WSL 后，如果 Linux 内没有兼容 Node，本安装器会在 Linux 用户目录中安装当前 Node.js LTS，绝不会使用 `/mnt/c` 下的 `node.exe`。当前官方源码开发支持范围为 Node.js 22.19+ 或 24+；发布的 CLI 包目前没有单独声明 `engines`，因此安装器采用官方源码范围作为保守下限。
 
-The current official source-development range is Node.js 22.19+ or 24+, while the published CLI package currently does not declare its own `engines` field. This installer therefore uses the current official source range as its conservative compatibility floor and installs the current LTS when it must add Node. It does not mistake the source-only pnpm requirement for an npm-package requirement.
+默认 `-PackageManager auto` 会沿用之前受管理安装所记录的管理器。新安装只有在现有 Linux 原生 pnpm 的全局目录可写时才使用 pnpm，否则使用 npm。官方对发布包的运行方式是 npm/npx；`pnpm install`、`pnpm run build` 和 `pnpm dsh web` 属于源码 checkout 流程。
 
-The default `-PackageManager auto` preserves the manager recorded by an earlier managed install. On a fresh install it uses pnpm only when a Linux-native pnpm already has a writable user global directory; otherwise it falls back to npm. It never uses a Windows `pnpm` exposed through `/mnt/c` and does not bootstrap pnpm silently.
+如果 npm 的官方 `latest` 仍指向 RC，必须显式使用 `-AcceptPrerelease`。当 `latest` 变为稳定版后可移除此参数。
 
-DeepSeek's official distinction matters here: the published CLI is documented with `npx @deepseek-ai/dsh web`; `pnpm install`, `pnpm run build`, and `pnpm dsh web` are the repository-checkout workflow. The CLI also forwards profile plugin management to pnpm. This project supports an existing pnpm without claiming it is mandatory for the published package.
+### 首次安装可能跨越重启
 
-When pnpm is selected, the installer still uses npm bundled with the required Linux Node.js installation for registry identity, repository, dist-tag, and integrity checks. pnpm controls the global package transaction; it does not replace those verification steps.
+默认命令在没有 WSL 时只显示主机 RAM、CPU、系统盘空间与两种平台选择。只有显式 opt-in 才会进入官方 `wsl --install` 流程。
 
-At the time this project was authored, npm's official `latest` tag still resolved to an RC build, which is why the example explicitly includes `-AcceptPrerelease`. Remove that switch when `latest` resolves to a stable release.
+安装器不会自行提升权限或重启电脑。Windows 要求重启时，请手动重启；Ubuntu 首次启动要求创建 Linux 用户名和密码时，请在本机完成，然后重新运行同一条命令。
 
-### Fresh Windows installation is resumable, not magically reboot-free
-
-If WSL or Ubuntu is not installed, the default command stops after showing host RAM/CPU/system-drive free space and the native-Windows-versus-WSL choice. Only the explicit `-InstallWslIfMissing:$true` form starts the official Windows WSL installation flow. Windows may require an administrator terminal and a reboot. Ubuntu may then require one local first-run to create the Linux username and password.
-
-The installer never self-elevates or reboots the computer. Complete the requested system step and rerun the same command; completed phases are reused.
-
-If a pre-existing or imported distribution opens directly as `root` and never shows a first-run prompt, the installer stops before mutation. A user must be created explicitly. On current WSL releases, the safe recovery shape is:
+如果已有或导入的发行版直接以 `root` 启动，而且从不显示首次设置界面，安装器会在修改前停止。经用户明确确认后，可按以下形态恢复：
 
 ```powershell
-$distro = 'Ubuntu-24.04' # Replace with the exact reviewed distro name.
-$linuxUser = 'alice'     # Replace with the user's chosen new Linux account.
+$distro = 'Ubuntu-24.04' # 替换为已核对的发行版名称
+$linuxUser = 'alice'     # 替换为用户选择的新 Linux 账号
 wsl.exe -d $distro -u root -- adduser $linuxUser
 wsl.exe -d $distro -u root -- usermod -aG sudo $linuxUser
 wsl.exe --manage $distro --set-default-user $linuxUser
 wsl.exe -d $distro -- id
 ```
 
-Review both variables before running the commands. They are intentionally not run by the one-click installer: account naming, password entry, and changing a distro's effective user require explicit user participation. If `wsl --manage` is unavailable, use Microsoft or distribution-specific recovery guidance rather than replacing `/etc/wsl.conf`.
+执行前必须检查两个变量。安装器不会猜用户名、替用户输入密码，也不会自动替换 `/etc/wsl.conf`。
 
-## Run Harness
+## 运行 Harness
 
-From a WSL terminal, change to the project that Harness may access and start the Web UI:
+在 WSL 终端进入允许 Harness 操作的项目目录，然后启动 Web UI：
 
 ```bash
 cd ~/projects/your-project
 dsh web
 ```
 
-Open <http://127.0.0.1:3080>, select **Settings → Models**, and enter the DeepSeek API key there. The official UI treats keys as write-only and stores the credential under `$DSH_HOME/.credentials.yaml` while returning a redacted descriptor to the page.
+打开 <http://127.0.0.1:3080>，进入 **Settings → Models**，在页面中输入 DeepSeek API key。不要把 key 粘贴到 agent 对话、命令行、仓库、`.env` 或 shell history 中。
 
-For Linux-heavy agent work, keep active repositories under the distribution's Linux filesystem, such as `~/projects`, rather than `/mnt/c` or `/mnt/e`. Cross-filesystem work is supported, but Git/npm workloads and Linux permission semantics are usually better on the WSL ext4 filesystem.
+Linux 工具密集型项目建议放在 `~/projects` 等 WSL Linux 文件系统内，而不是 `/mnt/c` 或 `/mnt/e`。Windows 挂载盘可以互通，但 Git/npm I/O 和 Linux 权限语义通常不如 WSL ext4。
 
-## Use the Codex skill
+## 安装 Codex Skill
 
-Copy the `deepseek-harness-wsl` folder into your personal Codex skills directory without overwriting an existing copy you have not reviewed:
+将 `deepseek-harness-wsl` 目录复制到个人 Codex skills 目录；如果目标已存在，不要未经检查直接覆盖：
 
 ```powershell
 $destination = Join-Path $env:USERPROFILE '.codex\skills\deepseek-harness-wsl'
@@ -125,222 +111,128 @@ if (Test-Path -LiteralPath $destination) { throw "Skill already exists: $destina
 Copy-Item -LiteralPath .\deepseek-harness-wsl -Destination $destination -Recurse
 ```
 
-Then ask Codex:
+然后可以对 Codex 说：
 
 ```text
-Use $deepseek-harness-wsl to inspect my Windows/WSL setup and install the official DeepSeek Harness in WSL2.
+使用 $deepseek-harness-wsl 检查我的 Windows/WSL 环境，并在 WSL2 中安装官方 DeepSeek Harness。
 ```
 
-Other useful prompts:
+## Minimal 极简模式
 
-```text
-Use $deepseek-harness-wsl to update Harness, showing the exact old and new versions first.
-```
+启动 `dsh web`，创建 session 时选择 **极简模式 / Minimal**。它是 Web UI 中的 agent preset，不是 `dsh minimal` CLI 子命令。
 
-```text
-Use $deepseek-harness-wsl to verify that Node, npm, and dsh are Linux binaries and that my install points to the official package.
-```
+Minimal 中表现更好可能来自训练/评测分布匹配、工具协议、reasoning trace、上下文策略或 Shell 差异。没有受控的跨 Harness 消融实验，就不能把“过拟合”写成已证实事实。
 
-## Minimal mode
+## 安全更新与回滚
 
-Start `dsh web`, create a session, and select **极简模式 / Minimal** in the Web UI. It is an agent preset, not a separate `dsh minimal` CLI command.
-
-The preset intentionally presents a very small model-facing surface. Better results in that surface may reflect distribution matching, tool protocol, reasoning-trace handling, context policy, or shell behavior. Calling it proven "overfitting" requires controlled cross-harness ablations that are not currently public.
-
-## Safe updates and rollback
-
-Update through the same entry point:
+通过同一入口更新：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\setup-deepseek-harness-wsl.ps1 -Action update -AcceptPrerelease -Yes
 ```
 
-The helper does not blindly execute `npx @latest`. It:
+安装器不会盲目运行 `npx @latest`。它会查询官方 npm registry、把 channel 解析为精确版本、显示 repository 与 integrity、确认仓库指向 `deepseek-ai/deepseek-harness`，然后安装该精确版本并记录前后版本。
 
-1. queries the official npm registry;
-2. resolves the selected channel to an exact version;
-3. displays repository and integrity metadata;
-4. verifies that the repository points to `deepseek-ai/deepseek-harness`;
-5. installs the exact resolved version;
-6. records the previous and installed versions without secrets.
-
-Roll back to a known exact version:
+回滚到已知版本：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\setup-deepseek-harness-wsl.ps1 -Action install -PackageVersion 0.1.0-rc.6 -AcceptPrerelease -Yes
 ```
 
-## Parameters
+## 主要参数
 
-| Parameter | Purpose |
+| 参数 | 用途 |
 |---|---|
-| `-Action status` | Inspect without installing |
-| `-Action install` | Install or resume |
-| `-Action update` | Resolve and install the selected current channel |
-| `-Action uninstall` | Remove only Harness through the selected manager; preserve data, Node, distro, and WSL |
-| `-Distribution <name>` | Use one exact installed WSL distribution |
-| `-Channel latest\|next` | Select an npm dist-tag before exact-version resolution |
-| `-PackageManager auto\|npm\|pnpm` | Preserve the recorded manager; otherwise use existing usable Linux pnpm or fall back to npm |
-| `-PackageVersion <semver>` | Install one exact version |
-| `-FetchRetries 0..10` | Fetch retries for this run only; default 4 |
-| `-FetchTimeoutSeconds 30..900` | Per-request network timeout for this run; default 300 seconds |
-| `-NetworkConcurrency 1..50` | Registry connections for this run; default 15, lower for an unstable link |
-| `-DownloadAttempts 1..3` | Attempts for the same verified exact version; default 2 |
-| `-NativeBuildTools auto\|skip` | Preflight Ubuntu native build requirements, or explicitly skip them |
-| `-AcceptPrerelease` | Explicitly allow RC/beta versions |
-| `-Yes` | Accept the displayed package/prerequisite changes |
-| `-WhatIf` | Preview mutations; metadata checks may still use the network |
-| `-SkipNodeInstall` | Require a compatible existing Linux Node.js |
-| `-InstallWslIfMissing:$true` | Explicitly opt in to adding WSL/Ubuntu when none is usable; default is false |
+| `-Action status` | 只检查，不安装 |
+| `-Action install` | 安装或继续安装 |
+| `-Action update` | 解析并安装所选 channel 的当前精确版本 |
+| `-Action uninstall` | 只移除 Harness，保留 Node、数据、发行版和 WSL |
+| `-Distribution <name>` | 使用明确指定的已安装发行版 |
+| `-Channel latest\|next` | 选择 npm dist-tag |
+| `-PackageManager auto\|npm\|pnpm` | 沿用记录的管理器，或选择现有可用 pnpm/npm |
+| `-PackageVersion <semver>` | 安装指定精确版本 |
+| `-FetchRetries 0..10` | 本次运行的下载重试次数，默认 4 |
+| `-FetchTimeoutSeconds 30..900` | 本次运行的单请求超时，默认 300 秒 |
+| `-NetworkConcurrency 1..50` | registry 并发连接数，默认 15 |
+| `-DownloadAttempts 1..3` | 同一精确版本的安装尝试次数，默认 2 |
+| `-NativeBuildTools auto\|skip` | 检查 Ubuntu 原生编译依赖，或明确跳过 |
+| `-AcceptPrerelease` | 明确允许 RC/beta |
+| `-Yes` | 接受显示的包与 prerequisite 改动 |
+| `-WhatIf` | 预览改动；metadata 检查仍可能联网 |
+| `-SkipNodeInstall` | 缺少兼容 Linux Node 时直接失败 |
+| `-InstallWslIfMissing:$true` | 明确允许新增 WSL/Ubuntu；默认 false |
 
-## Support and validation matrix
+## 安装器会修改什么？
 
-| Environment | Status |
-|---|---|
-| Windows 11 x64 + current WSL2 + Ubuntu 24.04 | PowerShell parsing, Bash parsing, status path, root boundary, and dry-run package verification tested |
-| Existing Ubuntu WSL2 with Linux Node.js 24 | Status and exact-version npm metadata dry-run tested |
-| System Node under `/usr` with an unwritable npm global prefix | User-owned prefix selection dry-run and isolated profile-persistence regression-tested |
-| Non-login npm/pnpm status and managed paths | New/legacy state, pnpm restoration, external/special-character prefixes, and exact `dsh` path regression-tested |
-| Native dependency and unstable downloads | Build-tools preflight plus bounded timeout/concurrency behavior covered by mock regression tests |
-| Fresh WSL install across administrator/reboot/first-run boundaries | Designed as a resumable flow; not automatically reboot-tested |
-| Harness RAM and concurrent-session sizing | No official minimum or formula published; no fixed `2GB` recommendation is made |
-| Windows 10 2004+ / ARM64 / non-Ubuntu distributions | Expected to require environment-specific validation; not claimed as tested |
+根据当前状态，它可能：
 
-Static validation includes the Skill Creator validator. The scripts intentionally have no live Harness installation or paid API smoke test in their repository test path.
+- 通过官方 `wsl --install` 新增 Ubuntu 24.04；
+- 安装缺少的 `git`、`curl`、CA certificates、`build-essential` 和 Python 3；
+- 使用固定 nvm tag，并核对 commit 后安装当前 Node.js LTS；
+- 备份 `~/.profile`，再添加带 marker 的最小 nvm 或 npm prefix/PATH 区块；
+- 当 `/usr` 不可写时使用用户目录 `~/.local`，绝不使用 `sudo npm -g`；
+- 通过 npm 或已存在的 Linux pnpm 安装精确版本 `@deepseek-ai/dsh`；
+- 在 `~/.local/state/deepseek-harness-wsl/` 写入不含 secret 的版本与回滚记录。
 
-When compatible Linux Node/npm is absent, the first `-WhatIf` output is a phase-one preview. It lists prerequisite, pinned nvm, and profile changes but cannot resolve the exact npm target yet. Run the same preview again after Node is available to inspect registry, repository, integrity, and exact package-version metadata.
+它不会修改默认发行版、转换 WSL1、编辑 `.wslconfig`、VPN、DNS、防火墙或代理，不会公开监听 Web UI、保存 API key、删除工作区或注销发行版。
 
-## What the installer changes
+## 常见问题
 
-Depending on the starting state, it may:
+### Windows 变慢或 `vmmem` 很大
 
-- add Ubuntu 24.04 through the official `wsl --install` command;
-- install missing Ubuntu `git`, `curl`, and CA certificates;
-- install missing `build-essential` and Python 3 when a changed Harness version may need to compile `node-pty`;
-- clone a pinned nvm Git tag, verify its expected commit, and install the current Node.js LTS for the Linux user;
-- add one marked nvm loader block to `~/.profile`, after backing it up;
-- when the effective npm global prefix is not user-writable, create `~/.local` and add one marked `NPM_CONFIG_PREFIX`/`PATH` block to `~/.profile`, after backing it up;
-- install an exact `@deepseek-ai/dsh` version into that user's Linux npm prefix;
-- or, when selected, use an already configured Linux pnpm whose global bin is writable inside that user's home;
-- write a user-only version/package-manager/managed-path rollback record under `~/.local/state/deepseek-harness-wsl/`.
+先检查 `wsl --list --running`，以及 Harness、Docker、测试或其他 Linux 工作是否仍在运行。关闭浏览器标签不一定会终止 Harness server 或子进程。
 
-It does **not** change the default distro, convert WSL1, edit `.wslconfig`, alter VPN/DNS/firewall settings, expose the Web UI beyond localhost, store API keys, modify a project, delete Harness data, or unregister a distribution.
+不要直接粘贴通用 `memory=2GB` 配置。该上限会影响所有 WSL2 发行版，也没有与会话数量对应的 DeepSeek 官方公式。`wsl --shutdown` 会终止所有运行中的发行版，因此本项目不会自动执行它。
 
-The Windows-side status output includes total/available RAM, logical CPU count, free space on the system drive, WSL distributions currently reported as running, and only the presence or absence of `.wslconfig`. It does not infer which application started a distribution, dump that global configuration, or choose a cap. The Linux model itself remains in DeepSeek's cloud API; local resource use comes from WSL, Harness, tools, builds, tests, and other subprocesses.
+WSL2 使用动态扩展虚拟磁盘。删除 Linux 文件会降低 guest 文件系统用量，但不保证 host 上的 VHD 文件立即缩小。请遵循 Microsoft 当前磁盘管理指南，不要直接删除或编辑 `ext4.vhdx`。
 
-## Secrets and permissions
+### npm 无权写入 `/usr/lib/node_modules`
 
-- Never paste a DeepSeek API key into an agent conversation or command-line argument.
-- Never commit `.credentials.yaml`, `.env`, or shell history containing credentials.
-- Harness sessions default to a workspace-write permission preset. Choose the workspace deliberately and review tool approvals.
-- API authentication and paid model calls are separate from installation verification. This project does not send a paid smoke-test request automatically.
+系统 Node 可能可用，但 npm global prefix `/usr` 对普通用户不可写。重新运行本 Skill；它会选择 `~/.local` 并持久化受管理 PATH。不要使用 `sudo npm install --global`、递归修改 `/usr` 所有权或自动删除疑似残留目录。
 
-## Troubleshooting
+### registry metadata 正常，但某个 `.tgz` 超时
 
-### Windows feels slower or `vmmem` is large
+metadata 和 tarball 是不同 HTTP 请求。安装器只对已验证的同一精确版本做有界重试，并保持官方 registry、TLS 与 integrity 检查。不要使用非官方镜像、`strict-ssl=false`、`curl -k` 或 `npm cache clean --force`；切换 pnpm 也不能保证改变网络路由。
 
-First check which distributions are actually running and whether Harness, Docker, tests, or other Linux background services are still active. Closing the Web UI tab does not necessarily terminate its server or its child processes.
-
-Do not immediately paste a generic `memory=2GB` block into `.wslconfig`. That cap is global, requires the WSL VM to restart before it applies, and has no DeepSeek-supported relationship to a number of conversations. Use Windows Task Manager, WSL Settings, and workload-specific process inspection to observe the peak first. `wsl --shutdown` terminates every running distribution, so this project never runs it automatically.
-
-WSL2 distributions store Linux files in dynamically expanding virtual disks. Deleting Linux files reduces guest-filesystem usage but does not guarantee that the host VHD file immediately shrinks. Follow Microsoft's current disk-space guide for the installed WSL version; do not manually delete or edit `ext4.vhdx`.
-
-### Multiple WSL distributions
-
-Specify the intended distribution exactly:
-
-```powershell
-...\setup-deepseek-harness-wsl.ps1 -Action install -Distribution Ubuntu-24.04 -AcceptPrerelease -Yes
-```
-
-The installer ignores Docker Desktop's internal distributions and never changes your default distro. If more than one normal distribution exists, it stops and requires `-Distribution`; it does not guess.
-
-### Node resolves to Windows
-
-Inside WSL, these should resolve to Linux paths and `linux`:
-
-```bash
-type -a node npm dsh
-node -p process.platform
-```
-
-Paths under `/mnt/c`, `/mnt/e`, or ending in `.exe`/`.cmd` are not accepted as the managed Linux Node installation.
-
-### npm cannot write `/usr/lib/node_modules`
-
-Ubuntu's system Node may be perfectly usable while its default npm global prefix is `/usr`, which a normal Linux user cannot modify. This is not a reason to use `sudo npm install --global`.
-
-Run status or preview with this Skill. The output should show the effective prefix, global root, writability, bin-path status, and package residue. During install/update, the helper preserves an existing writable user prefix; otherwise it selects `~/.local`, exports `NPM_CONFIG_PREFIX` for the managed npm process, adds `~/.local/bin` to the current `PATH`, and persists a marked block in `~/.profile` after backing it up.
-
-```bash
-npm prefix --global
-npm root --global
-command -v dsh
-```
-
-Do not fix this by changing ownership under `/usr`, running npm as root, or deleting a suspected partial package directory. If a package directory exists but npm reports no installed version, the helper reports it. Residue under an unwritable system prefix is left untouched; residue inside the selected user prefix is offered to npm's verified exact-version install for reconciliation.
-
-### WSL network differs from Windows
-
-Test DNS and HTTPS from inside the selected distribution. Windows connectivity does not prove WSL connectivity. This project will not disable TLS checks or rewrite DNS, proxy, VPN, firewall, `/etc/wsl.conf`, or `.wslconfig` automatically.
-
-If package metadata and `npm ping` work but one dependency tarball such as `*.tgz` times out, those results are not contradictory: metadata and tarballs are separate HTTP requests and may take different network/cache paths. The installer retries only the already verified exact Harness version, with bounded per-process settings. It reports a tarball timeout separately and leaves the official registry, TLS checks, and cache protections intact.
-
-For a more patient retry without changing persistent npm/pnpm configuration:
+较慢网络可显式降低并发并增加有限等待：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\setup-deepseek-harness-wsl.ps1 -Action install -FetchRetries 6 -FetchTimeoutSeconds 600 -NetworkConcurrency 4 -DownloadAttempts 3 -AcceptPrerelease -Yes
 ```
 
-Do not use `npm cache clean --force`, an unofficial mirror, `strict-ssl=false`, or `curl -k`. Switching to pnpm is an installation-policy choice, not a guarantee of a different network route to the same registry tarballs.
+### `node-pty` 或 node-gyp 编译失败
 
-The lower concurrency example is generic and optional. It does not detect, configure, or assume a particular VPN product.
+默认 `-NativeBuildTools auto` 会检查 `make`、Python 3、GCC 和 G++。Ubuntu 缺件时只刷新 apt index 并安装必要包，不执行完整 `apt upgrade`。如果 agent 无法交互输入 sudo 密码，安装器会停止并打印用户可在 WSL 终端执行的恢复命令，不会偷偷改用 root。
 
-### `node-pty` or node-gyp cannot compile
+### `dsh` 已安装但命令找不到
 
-Harness currently reaches `node-pty` through its official dependency tree. On Ubuntu, node-pty/node-gyp may need `make`, Python 3, GCC, and G++. The default `-NativeBuildTools auto` checks these only when the target Harness version differs from the installed version, refreshes the apt index, and offers only the missing prerequisite packages—never a full `apt upgrade`.
+Windows 发起的非 login WSL 命令不一定读取 `~/.profile`。状态检查会直接解析并验证受管理的 `dsh` 绝对路径，不会 source 任意用户 profile，也不会通过向 `.bashrc`、`.npmrc` 重复写设置来掩盖问题。
 
-If sudo needs a password but the Agent process is non-interactive, the helper stops and prints the exact command to run inside that WSL distribution. It does not silently relaunch the installer as root.
+## 卸载
 
-### `dsh --help` appears stuck
-
-Developer-preview CLI behavior can change. Verification uses a timeout around `dsh --version` and does not kill unrelated Node processes.
-
-If status says `installed; absent from this non-login shell PATH`, the package is present. Windows-launched `wsl <command>` does not necessarily load the same profile as a new Linux login shell. The helper verifies the exact managed `dsh` path directly and does not source the user's whole profile.
-
-New installs record the managed prefix and bin directory in the helper's user-only state file. Status consults that record; for older installs, it can recognize the helper's standard `~/.local` package location. The installer does not add parallel prefix/PATH definitions to `.bashrc` and `.npmrc`, which could create conflicting sources of truth.
-
-`wsl.exe -d <Distro> -- dsh` directly launches a process and is not guaranteed to read any shell startup file. For Windows-side automation, use this Skill's status/launcher path or the reported absolute Linux executable; do not keep adding startup-file entries to make a direct process launch behave like a login shell.
-
-## Uninstall
-
-Remove only Harness from the selected Linux package-manager location:
+只移除 Harness：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\setup-deepseek-harness-wsl.ps1 -Action uninstall -Yes
 ```
 
-Removing Node.js, user settings, a WSL distribution, or WSL itself is intentionally outside this command's scope.
+移除 Node.js、用户设置、WSL 发行版或 WSL 本身属于独立高风险操作，不在此命令范围内。
 
-## Sources
+## 主要来源
 
-- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
-- [DeepSeek Harness native Windows implementation note](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/feature/2026-08-01-windows-pwsh-default.md)
-- [DeepSeek Harness source development prerequisites](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/development.md)
-- [DeepSeek per-session agent measurements](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-08-03-per-session-agent-presets.md)
-- [DeepSeek large-session restore measurements](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-08-05-large-session-jsonl-restore-pipeline.md)
-- [Harness CLI behavior reference](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/cli/reference/README.md)
-- [DeepSeek V4 technical report](https://arxiv.org/html/2606.19348v1)
-- [Microsoft: Install WSL](https://learn.microsoft.com/windows/wsl/install)
-- [Microsoft: Advanced WSL settings and current defaults](https://learn.microsoft.com/windows/wsl/wsl-config)
-- [Microsoft: Manage WSL disk space](https://learn.microsoft.com/windows/wsl/disk-space)
-- [Microsoft: Basic WSL commands and shutdown scope](https://learn.microsoft.com/windows/wsl/basic-commands)
-- [Microsoft: Working across Windows and Linux filesystems](https://learn.microsoft.com/windows/wsl/filesystems)
-- [npm install documentation](https://docs.npmjs.com/cli/commands/npm-install/)
-- [npm configuration: fetch retries and timeouts](https://docs.npmjs.com/cli/using-npm/config/)
-- [pnpm setup and global bin behavior](https://pnpm.io/cli/setup)
-- [pnpm request settings](https://pnpm.io/settings#request-settings)
-- [node-pty Linux build dependencies](https://github.com/microsoft/node-pty#dependencies)
+- [DeepSeek Harness 官方仓库](https://github.com/deepseek-ai/deepseek-harness)
+- [DeepSeek Harness 源码开发要求](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/development.md)
+- [DeepSeek Windows PowerShell 支持说明](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/feature/2026-08-01-windows-pwsh-default.md)
+- [DeepSeek per-session agent 测量](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-08-03-per-session-agent-presets.md)
+- [DeepSeek 大型 session 恢复测量](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-08-05-large-session-jsonl-restore-pipeline.md)
+- [DeepSeek V4 技术报告](https://arxiv.org/html/2606.19348v1)
+- [Microsoft：安装 WSL](https://learn.microsoft.com/windows/wsl/install)
+- [Microsoft：WSL 高级设置](https://learn.microsoft.com/windows/wsl/wsl-config)
+- [Microsoft：管理 WSL 磁盘空间](https://learn.microsoft.com/windows/wsl/disk-space)
+- [Microsoft：WSL 基本命令](https://learn.microsoft.com/windows/wsl/basic-commands)
+- [npm install 文档](https://docs.npmjs.com/cli/commands/npm-install/)
+- [pnpm request 设置](https://pnpm.io/settings#request-settings)
+- [node-pty Linux 构建依赖](https://github.com/microsoft/node-pty#dependencies)
 - [node-gyp Unix prerequisites](https://github.com/nodejs/node-gyp#on-unix)
 
 ## License
