@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ ${1:-} == -n && ${2:-} == true ]]; then
+  exit 1
+fi
+printf 'unexpected sudo invocation: %s\n' "$*" >&2
+exit 99

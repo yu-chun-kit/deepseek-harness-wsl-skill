@@ -13,7 +13,7 @@ Resolve every relative resource path against this skill directory. Run the provi
 
 1. Read [operations.md](references/operations.md) before changing the host. Read [evidence-boundaries.md](references/evidence-boundaries.md) before explaining minimal mode, Linux, WSL, or overfitting claims.
 2. Inspect Windows build, `wsl --status`, `wsl --version`, and `wsl --list --verbose`. Reuse an initialized WSL2 distribution when possible. If multiple non-Docker distributions exist, require an explicit selection. Do not change the default distribution or convert WSL1 automatically.
-3. Offer the relevant choices before mutation: exact distribution, `auto|npm|pnpm`, `latest|next|exact version`, and normal or more patient bounded download settings. Use `auto`, `latest`, four fetch retries, a 300-second request timeout, and two exact-install attempts when the user does not care. `auto` preserves the package manager recorded by an earlier managed install; for a fresh install it uses an existing usable Linux pnpm and otherwise npm. Never treat a Windows pnpm under `/mnt/*` as usable.
+3. Offer the relevant choices before mutation: exact distribution, `auto|npm|pnpm`, `latest|next|exact version`, native build-tools preflight, and normal or more patient bounded download settings. Use `auto`, `latest`, build-tools `auto`, four fetch retries, a 300-second request timeout, npm's normal 15 connections, and two exact-install attempts when the user does not care. `auto` preserves the package manager recorded by an earlier managed install; for a fresh install it uses an existing usable Linux pnpm and otherwise npm. Never treat a Windows pnpm under `/mnt/*` as usable.
 4. Run the status action first:
 
    ```powershell
@@ -47,12 +47,15 @@ Resolve every relative resource path against this skill directory. Run the provi
 - Keep TLS verification and npm integrity checks enabled. Never use `curl | bash`, `sudo npm -g`, `--force`, `curl -k`, or `strict-ssl=false`.
 - Distinguish official usage modes: DeepSeek documents npm/npx for running the published CLI and pnpm for a source checkout and profile plugin management. Do not claim that pnpm is mandatory for the published package. Do not install pnpm automatically merely because `auto` was selected.
 - When metadata/ping succeeds but a `.tgz` request times out, classify it as a WSL-to-registry transport failure. Retry only the same verified exact version within the selected bounds. Do not clear the cache forcibly, change registries, disable TLS, or promise that switching npm/pnpm will fix the network path.
+- Preflight `make`, Python 3, GCC, and G++ before a changed Harness version is installed because its `node-pty` dependency may compile through node-gyp. On Ubuntu, offer only the missing `build-essential`/`python3` packages after `apt-get update`; never run a full upgrade. If sudo requires a password in a non-interactive agent process, stop with a local WSL resume command. Do not bypass that boundary with `wsl -u root` for package installation.
 - Treat a system Node at `/usr/bin/node` as valid, but never write npm global packages into an unwritable `/usr` prefix. Let the helper select and persist a user-owned `~/.local` prefix; do not fix npm `EACCES` with sudo or recursive ownership changes.
 - Report a package directory that exists without a package-manager-installed version as possible partial residue. Do not delete it automatically; retry the verified exact-version install and stop for review if the selected manager cannot reconcile it.
 - Do not edit `.wslconfig`, `wsl.conf`, DNS, VPN, proxy, firewall, default distro, or global WSL networking. Diagnose and report instead.
 - Never unregister a distribution, delete a VHD/home/config, run a full `apt upgrade`, recursively change `/mnt/*` permissions, or stop unrelated Node processes.
 - Treat uninstalling Harness, removing Node, removing a distro, and disabling WSL as separate operations. The provided uninstall removes only the selected manager's Harness package and preserves user data.
 - Separate installation success, Web UI startup, API authentication, and paid model smoke tests. Never incur API cost without explicit opt-in.
+- Do not source an arbitrary user profile merely to verify `dsh`. Resolve the managed npm/pnpm bin path directly, report when only a non-login shell PATH is missing it, and execute the exact verified path for the version check.
+- Keep the marked `.profile` block and the helper-owned state record as the only persistence sources. Do not add duplicate prefix/PATH settings to `.bashrc` or `.npmrc` merely to make a non-login status command pass.
 
 ## Update and roll back
 

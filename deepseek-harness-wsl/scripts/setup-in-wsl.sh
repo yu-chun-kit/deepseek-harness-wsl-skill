@@ -11,13 +11,16 @@ PACKAGE_MANAGER='auto'
 SELECTED_PACKAGE_MANAGER=''
 FETCH_RETRIES=4
 FETCH_TIMEOUT_SECONDS=300
+NETWORK_CONCURRENCY=15
 DOWNLOAD_ATTEMPTS=2
+NATIVE_BUILD_TOOLS='auto'
 NVM_VERSION='v0.40.6'
 NVM_COMMIT='18f62ba4e8e2148383332fb1ac8b2ff1ee21a263'
 ACCEPT_PRERELEASE=0
 ASSUME_YES=0
 SKIP_NODE_INSTALL=0
 DRY_RUN=0
+INITIAL_PATH="$PATH"
 
 while (($#)); do
   case "$1" in
@@ -27,7 +30,9 @@ while (($#)); do
     --package-manager) PACKAGE_MANAGER="$2"; shift 2 ;;
     --fetch-retries) FETCH_RETRIES="$2"; shift 2 ;;
     --fetch-timeout-seconds) FETCH_TIMEOUT_SECONDS="$2"; shift 2 ;;
+    --network-concurrency) NETWORK_CONCURRENCY="$2"; shift 2 ;;
     --download-attempts) DOWNLOAD_ATTEMPTS="$2"; shift 2 ;;
+    --native-build-tools) NATIVE_BUILD_TOOLS="$2"; shift 2 ;;
     --accept-prerelease) ACCEPT_PRERELEASE=1; shift ;;
     --yes) ASSUME_YES=1; shift ;;
     --skip-node-install) SKIP_NODE_INSTALL=1; shift ;;
@@ -43,12 +48,17 @@ case "$PACKAGE_MANAGER" in auto|npm|pnpm) ;; *) printf 'Invalid package manager:
 [[ $FETCH_TIMEOUT_SECONDS =~ ^[0-9]+$ ]] && ((FETCH_TIMEOUT_SECONDS >= 30 && FETCH_TIMEOUT_SECONDS <= 900)) || {
   printf 'Fetch timeout must be from 30 through 900 seconds.\n' >&2; exit 2
 }
+[[ $NETWORK_CONCURRENCY =~ ^[0-9]+$ ]] && ((NETWORK_CONCURRENCY >= 1 && NETWORK_CONCURRENCY <= 50)) || {
+  printf 'Network concurrency must be from 1 through 50.\n' >&2; exit 2
+}
 [[ $DOWNLOAD_ATTEMPTS =~ ^[123]$ ]] || { printf 'Download attempts must be from 1 through 3.\n' >&2; exit 2; }
+case "$NATIVE_BUILD_TOOLS" in auto|skip) ;; *) printf 'Invalid native build-tools policy: %s\n' "$NATIVE_BUILD_TOOLS" >&2; exit 2 ;; esac
 
 export npm_config_fetch_retries="$FETCH_RETRIES"
 export npm_config_fetch_timeout="$((FETCH_TIMEOUT_SECONDS * 1000))"
 export npm_config_fetch_retry_mintimeout=10000
 export npm_config_fetch_retry_maxtimeout=60000
+export npm_config_maxsockets="$NETWORK_CONCURRENCY"
 
 if [[ ${EUID} -eq 0 && $ACTION != status && $DRY_RUN -eq 0 ]]; then
   printf 'Refusing to install Harness as root. Complete distro first-run and rerun as the normal Linux user.\n' >&2
@@ -99,6 +109,7 @@ select_package_manager() {
   case "$PACKAGE_MANAGER" in
     npm) SELECTED_PACKAGE_MANAGER='npm' ;;
     pnpm)
+      restore_recorded_pnpm_environment
       if ! linux_pnpm_is_usable; then
         printf 'Explicit pnpm selection requires an existing Linux-native pnpm with a writable user global bin directory.\n' >&2
         printf 'Install/configure pnpm separately from its official instructions, or use -PackageManager npm/auto.\n' >&2
@@ -111,6 +122,7 @@ select_package_manager() {
         recorded=$(node -e 'const fs=require("fs");try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));console.log(j.packageManager||"npm")}catch{}' "$state_file" 2>/dev/null || true)
       fi
       if [[ $recorded == pnpm ]]; then
+        restore_recorded_pnpm_environment
         if ! linux_pnpm_is_usable; then
           printf 'The previous managed install used pnpm, but that Linux pnpm global location is no longer usable.\n' >&2
           printf 'Repair pnpm or explicitly select npm after reviewing the migration; auto will not create a duplicate install.\n' >&2
@@ -131,17 +143,96 @@ select_package_manager() {
   printf '\n'
 }
 
+state_value() {
+  local key="$1" state_file="$HOME/.local/state/deepseek-harness-wsl/last-install.json"
+  [[ -r $state_file ]] || return 1
+  node -e 'const fs=require("fs");try{const j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const v=j[process.argv[2]];if(typeof v==="string")process.stdout.write(v)}catch{}' \
+    "$state_file" "$key" 2>/dev/null
+}
+
+restore_recorded_pnpm_environment() {
+  local manager_path='' managed_bin='' candidate=''
+  manager_path=$(state_value packageManagerPath || true)
+  managed_bin=$(state_value managedBin || true)
+  if [[ -z $manager_path ]]; then
+    candidate="$HOME/.local/share/pnpm/pnpm"
+    [[ -x $candidate ]] && manager_path="$candidate"
+  fi
+  if [[ -n $manager_path && $manager_path == "$HOME/"* && $manager_path != /mnt/* && -x $manager_path ]]; then
+    path_contains "$(dirname -- "$manager_path")" || export PATH="$(dirname -- "$manager_path"):$PATH"
+  fi
+  if [[ -n $managed_bin && $managed_bin == "$HOME/"* && $managed_bin != /mnt/* && -d $managed_bin && -w $managed_bin ]]; then
+    path_contains "$managed_bin" || export PATH="$managed_bin:$PATH"
+  fi
+}
+
+restore_recorded_npm_prefix() {
+  local recorded_prefix=''
+  recorded_prefix=$(state_value managedPrefix || true)
+  if [[ -z $recorded_prefix && -r "$HOME/.local/lib/node_modules/@deepseek-ai/dsh/package.json" ]]; then
+    recorded_prefix="$HOME/.local"
+  fi
+  [[ -n $recorded_prefix ]] || return 0
+  if [[ $recorded_prefix != /* || $recorded_prefix == /mnt/* || ! -d $recorded_prefix || ! -w $recorded_prefix ]]; then
+    printf 'Ignoring recorded npm prefix that is not an existing writable Linux path: %s\n' "$recorded_prefix" >&2
+    return 0
+  fi
+  export NPM_CONFIG_PREFIX="$recorded_prefix"
+}
+
+linux_path_is_executable() {
+  local command_path="$1" resolved_path
+  [[ -n $command_path && $command_path != /mnt/* && $command_path != *.exe && $command_path != *.cmd ]] || return 1
+  resolved_path=$(readlink -f -- "$command_path" 2>/dev/null || true)
+  [[ -n $resolved_path && $resolved_path != /mnt/* && $resolved_path != *.exe && $resolved_path != *.cmd && -x $resolved_path ]]
+}
+
+linux_command_is_usable() {
+  local command_path
+  command_path=$(command -v "$1" 2>/dev/null || true)
+  linux_path_is_executable "$command_path"
+}
+
 ensure_prerequisites() {
-  local missing=()
+  local include_native="${1:-0}" missing=() sudo_args=()
   command -v git >/dev/null 2>&1 || missing+=(git)
   command -v curl >/dev/null 2>&1 || missing+=(curl)
   [[ -r /etc/ssl/certs/ca-certificates.crt ]] || missing+=(ca-certificates)
+  if [[ $include_native == 1 ]]; then
+    if ! linux_command_is_usable make ||
+       ! linux_command_is_usable gcc ||
+       ! linux_command_is_usable g++; then
+      missing+=(build-essential)
+    fi
+    linux_command_is_usable python3 || missing+=(python3)
+  fi
   ((${#missing[@]} == 0)) && return 0
-  printf 'Missing Linux prerequisites: %s\n' "${missing[*]}"
-  ((DRY_RUN)) && return 1
+  printf 'Missing Linux prerequisite packages: %s\n' "${missing[*]}"
+  if ((DRY_RUN)); then
+    printf 'Would refresh the Ubuntu package index and install only these packages; no full upgrade.\n'
+    return 1
+  fi
   confirm 'Install missing prerequisites with apt and sudo?' || return 1
-  sudo apt-get update
-  sudo apt-get install -y git curl ca-certificates
+  if ! command -v sudo >/dev/null 2>&1; then
+    printf 'sudo is unavailable in this distribution. Configure an initialized admin-capable Linux user, then rerun.\n' >&2
+    printf 'The helper will not switch the whole installation to root.\n' >&2
+    return 1
+  fi
+  if sudo -n true 2>/dev/null; then
+    sudo_args=(-n)
+  else
+    if [[ -t 0 ]]; then
+      sudo -v
+    else
+      printf 'sudo needs an interactive password. Open this WSL distribution, run:\n' >&2
+      printf '  sudo apt-get update && sudo apt-get install -y' >&2
+      printf ' %q' "${missing[@]}" >&2
+      printf '\nThen rerun the same Skill command. The helper will not bypass this boundary with wsl -u root.\n' >&2
+      return 1
+    fi
+  fi
+  sudo "${sudo_args[@]}" apt-get update
+  sudo "${sudo_args[@]}" apt-get install -y "${missing[@]}"
 }
 
 ensure_node() {
@@ -225,15 +316,27 @@ path_contains() {
   esac
 }
 
+path_value_contains() {
+  local path_value="$1" candidate="$2"
+  case ":$path_value:" in
+    *":$candidate:"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 persist_npm_prefix() {
-  local prefix="$1" persist_prefix="$2"
+  local prefix="$1" persist_prefix="$2" quoted_prefix quoted_bin
   local profile="$HOME/.profile"
   local marker_begin='# >>> deepseek-harness-wsl npm prefix >>>'
   local marker_end='# <<< deepseek-harness-wsl npm prefix <<<'
+  printf -v quoted_prefix '%q' "$prefix"
+  printf -v quoted_bin '%q' "$prefix/bin"
 
   if grep -Fq "$marker_begin" "$profile" 2>/dev/null; then
-    if grep -Fq "export PATH=\"$prefix/bin:\$PATH\"" "$profile" &&
-       { [[ $persist_prefix == 0 ]] || grep -Fq "export NPM_CONFIG_PREFIX=\"$prefix\"" "$profile"; }; then
+    if { grep -Fq "__dsh_managed_bin=$quoted_bin" "$profile" ||
+         grep -Fq "export PATH=\"$prefix/bin:\$PATH\"" "$profile"; } &&
+       { [[ $persist_prefix == 0 ]] || grep -Fq "export NPM_CONFIG_PREFIX=$quoted_prefix" "$profile" ||
+         grep -Fq "export NPM_CONFIG_PREFIX=\"$prefix\"" "$profile"; }; then
       return 0
     fi
     printf 'Existing managed npm prefix block in %s does not match target %s; refusing to overwrite it.\n' "$profile" "$prefix" >&2
@@ -244,9 +347,11 @@ persist_npm_prefix() {
   {
     printf '\n%s\n' "$marker_begin"
     if [[ $persist_prefix == 1 ]]; then
-      printf 'export NPM_CONFIG_PREFIX="%s"\n' "$prefix"
+      printf 'export NPM_CONFIG_PREFIX=%s\n' "$quoted_prefix"
     fi
-    printf 'case ":$PATH:" in *":%s/bin:"*) ;; *) export PATH="%s/bin:$PATH" ;; esac\n' "$prefix" "$prefix"
+    printf '__dsh_managed_bin=%s\n' "$quoted_bin"
+    printf 'case ":$PATH:" in *":${__dsh_managed_bin}:"*) ;; *) export PATH="${__dsh_managed_bin}:$PATH" ;; esac\n'
+    printf 'unset __dsh_managed_bin\n'
     printf '%s\n' "$marker_end"
   } >>"$profile"
 }
@@ -377,24 +482,33 @@ install_exact_version() {
   local target="$1" attempt log_file
   for ((attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt++)); do
     log_file=$(mktemp)
-    printf 'Install attempt: %s/%s (fetch retries: %s, fetch timeout: %ss)\n' \
-      "$attempt" "$DOWNLOAD_ATTEMPTS" "$FETCH_RETRIES" "$FETCH_TIMEOUT_SECONDS"
+    printf 'Install attempt: %s/%s (fetch retries: %s, fetch timeout: %ss, network concurrency: %s)\n' \
+      "$attempt" "$DOWNLOAD_ATTEMPTS" "$FETCH_RETRIES" "$FETCH_TIMEOUT_SECONDS" "$NETWORK_CONCURRENCY"
     if [[ $SELECTED_PACKAGE_MANAGER == pnpm ]]; then
       if pnpm add --global --save-exact "$PACKAGE@$target" --registry="$REGISTRY" \
-        --fetch-retries="$FETCH_RETRIES" --fetch-timeout="$((FETCH_TIMEOUT_SECONDS * 1000))" 2>&1 | tee "$log_file"; then
+        --fetch-retries="$FETCH_RETRIES" --fetch-timeout="$((FETCH_TIMEOUT_SECONDS * 1000))" \
+        --network-concurrency="$NETWORK_CONCURRENCY" 2>&1 | tee "$log_file"; then
         rm -f "$log_file"
         return 0
       fi
     else
       if npm install --global "$PACKAGE@$target" --registry="$REGISTRY" \
-        --fetch-retries="$FETCH_RETRIES" --fetch-timeout="$((FETCH_TIMEOUT_SECONDS * 1000))" 2>&1 | tee "$log_file"; then
+        --fetch-retries="$FETCH_RETRIES" --fetch-timeout="$((FETCH_TIMEOUT_SECONDS * 1000))" \
+        --maxsockets="$NETWORK_CONCURRENCY" 2>&1 | tee "$log_file"; then
         rm -f "$log_file"
         return 0
       fi
     fi
-    if grep -Eqi 'ETIMEDOUT|ERR_SOCKET_TIMEOUT|socket timeout|network timeout|request.*timed out' "$log_file"; then
+    if grep -Eqi 'request (to )?https?://[^ ]+\.tgz.*tim(ed)? out|https?://[^ ]+\.tgz.*(ETIMEDOUT|ERR_SOCKET_TIMEOUT)' "$log_file"; then
       printf 'The registry metadata was verified, but a package tarball request timed out inside WSL.\n' >&2
       printf 'TLS and the official registry remain unchanged. A package-manager switch is not guaranteed to fix this transport path.\n' >&2
+    elif grep -Eqi 'ETIMEDOUT|ERR_SOCKET_TIMEOUT|socket timeout|network timeout|request.*timed out' "$log_file"; then
+      printf 'A registry request timed out inside WSL; the log does not prove that the failed request was a package tarball.\n' >&2
+      printf 'TLS and the official registry remain unchanged while the same verified exact version is retried.\n' >&2
+    fi
+    if grep -Eqi 'node-gyp|node-pty|make:.*not found|not found: make|C\+\+ compiler' "$log_file"; then
+      printf 'A native Node dependency failed to build. Verify make, Python 3, GCC, and G++ in this WSL distribution.\n' >&2
+      printf 'Rerun with the default -NativeBuildTools auto; do not install npm packages as root.\n' >&2
     fi
     rm -f "$log_file"
     if ((attempt < DOWNLOAD_ATTEMPTS)); then
@@ -405,8 +519,24 @@ install_exact_version() {
   return 1
 }
 
+resolve_dsh_path() {
+  local candidate='' path_candidate=''
+  if [[ $SELECTED_PACKAGE_MANAGER == pnpm ]] && command -v pnpm >/dev/null 2>&1; then
+    candidate="$(pnpm bin --global 2>/dev/null || true)/dsh"
+  elif command -v npm >/dev/null 2>&1; then
+    candidate="$(npm prefix --global 2>/dev/null || true)/bin/dsh"
+  fi
+  if linux_path_is_executable "$candidate"; then
+    printf '%s\n' "$candidate"
+    return 0
+  fi
+  path_candidate=$(command -v dsh 2>/dev/null || true)
+  linux_path_is_executable "$path_candidate" || return 1
+  printf '%s\n' "$path_candidate"
+}
+
 show_status() {
-  local current_prefix global_root pnpm_bin
+  local current_prefix global_root pnpm_bin dsh_path
   load_nvm
   printf 'WSL kernel:    %s\n' "$(uname -r)"
   printf 'Architecture:  %s\n' "$(uname -m)"
@@ -420,6 +550,8 @@ show_status() {
     printf 'Node:          not found\n'
   fi
   if command -v npm >/dev/null 2>&1 && command -v node >/dev/null 2>&1; then
+    if [[ -z $SELECTED_PACKAGE_MANAGER ]]; then select_package_manager || true; fi
+    if [[ $SELECTED_PACKAGE_MANAGER == npm ]]; then restore_recorded_npm_prefix; fi
     printf 'npm:           %s (%s)\n' "$(npm --version)" "$(command -v npm)"
     current_prefix=$(npm prefix --global 2>/dev/null || true)
     global_root=$(npm root --global 2>/dev/null || true)
@@ -435,7 +567,6 @@ show_status() {
     else
       printf 'npm bin PATH:  no\n'
     fi
-    if [[ -z $SELECTED_PACKAGE_MANAGER ]]; then select_package_manager || true; fi
     if [[ $SELECTED_PACKAGE_MANAGER == npm ]]; then
       printf 'Harness:       %s\n' "$(installed_version)"
       report_package_residue
@@ -452,9 +583,14 @@ show_status() {
   elif command -v pnpm >/dev/null 2>&1 && ! linux_pnpm_is_usable; then
     printf 'pnpm:          found but rejected (must be Linux-native with a writable user global bin)\n'
   fi
-  if command -v dsh >/dev/null 2>&1; then
-    printf 'dsh path:      %s\n' "$(command -v dsh)"
-    timeout 10s dsh --version || printf 'dsh --version did not exit successfully within 10 seconds.\n'
+  dsh_path=$(resolve_dsh_path 2>/dev/null || true)
+  if [[ -n $dsh_path ]]; then
+    printf 'dsh path:      %s' "$dsh_path"
+    if ! path_value_contains "$INITIAL_PATH" "$(dirname -- "$dsh_path")"; then
+      printf ' (installed; absent from this non-login shell PATH)'
+    fi
+    printf '\n'
+    timeout 10s "$dsh_path" --version || printf 'dsh --version did not exit successfully within 10 seconds.\n'
   else
     printf 'dsh path:      not found\n'
   fi
@@ -516,10 +652,16 @@ if [[ $current == "$target" ]]; then
   exit 0
 fi
 
+if [[ $NATIVE_BUILD_TOOLS == auto ]]; then
+  ensure_prerequisites 1 || { ((DRY_RUN)) || exit 5; }
+else
+  printf 'Native build-tools preflight was skipped by explicit request; node-pty may require make, Python 3, GCC, and G++.\n'
+fi
+
 if ((DRY_RUN)); then
   printf 'Would install exact version %s (current: %s).\n' "$target" "${current:-none}"
-  printf 'Would use %s with %s fetch retries, a %ss fetch timeout, and at most %s install attempt(s).\n' \
-    "$SELECTED_PACKAGE_MANAGER" "$FETCH_RETRIES" "$FETCH_TIMEOUT_SECONDS" "$DOWNLOAD_ATTEMPTS"
+  printf 'Would use %s with %s fetch retries, a %ss fetch timeout, %s connection(s), and at most %s install attempt(s).\n' \
+    "$SELECTED_PACKAGE_MANAGER" "$FETCH_RETRIES" "$FETCH_TIMEOUT_SECONDS" "$NETWORK_CONCURRENCY" "$DOWNLOAD_ATTEMPTS"
   exit 0
 fi
 
@@ -528,8 +670,16 @@ install_exact_version "$target"
 
 state_dir="$HOME/.local/state/deepseek-harness-wsl"
 mkdir -p "$state_dir"
-printf '{"previous":"%s","installed":"%s","packageManager":"%s","timestamp":"%s"}\n' \
-  "${current:-}" "$target" "$SELECTED_PACKAGE_MANAGER" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$state_dir/last-install.json"
+managed_prefix=''
+package_manager_path=$(command -v "$SELECTED_PACKAGE_MANAGER")
+if [[ $SELECTED_PACKAGE_MANAGER == npm ]]; then
+  managed_prefix=$(npm prefix --global)
+  managed_bin="$managed_prefix/bin"
+else
+  managed_bin=$(pnpm bin --global)
+fi
+node -e 'const fs=require("fs");const out={previous:process.argv[2],installed:process.argv[3],packageManager:process.argv[4],packageManagerPath:process.argv[5],managedPrefix:process.argv[6],managedBin:process.argv[7],timestamp:process.argv[8]};fs.writeFileSync(process.argv[1],JSON.stringify(out)+"\n",{mode:0o600});fs.chmodSync(process.argv[1],0o600)' \
+  "$state_dir/last-install.json" "${current:-}" "$target" "$SELECTED_PACKAGE_MANAGER" "$package_manager_path" "$managed_prefix" "$managed_bin" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 actual=$(installed_version)
 [[ $actual == "$target" ]] || { printf 'Installed version %s does not match target %s.\n' "$actual" "$target" >&2; exit 8; }

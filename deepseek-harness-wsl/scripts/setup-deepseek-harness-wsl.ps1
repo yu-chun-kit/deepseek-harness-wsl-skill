@@ -12,8 +12,12 @@ param(
     [int]$FetchRetries = 4,
     [ValidateRange(30, 900)]
     [int]$FetchTimeoutSeconds = 300,
+    [ValidateRange(1, 50)]
+    [int]$NetworkConcurrency = 15,
     [ValidateRange(1, 3)]
     [int]$DownloadAttempts = 2,
+    [ValidateSet('auto', 'skip')]
+    [string]$NativeBuildTools = 'auto',
     [switch]$AcceptPrerelease,
     [switch]$Yes,
     [switch]$SkipNodeInstall,
@@ -97,7 +101,9 @@ $arguments = @(
     '--package-manager', $PackageManager,
     '--fetch-retries', $FetchRetries,
     '--fetch-timeout-seconds', $FetchTimeoutSeconds,
-    '--download-attempts', $DownloadAttempts
+    '--network-concurrency', $NetworkConcurrency,
+    '--download-attempts', $DownloadAttempts,
+    '--native-build-tools', $NativeBuildTools
 )
 if ($PackageVersion) { $arguments += @('--package-version', $PackageVersion) }
 if ($AcceptPrerelease) { $arguments += '--accept-prerelease' }
@@ -108,7 +114,8 @@ if ($WhatIfPreference) { $arguments += '--dry-run' }
 Write-Host "Distribution: $selectedDistribution"
 Write-Host "Action:       $Action"
 Write-Host "Pkg manager:  $PackageManager"
-Write-Host "Network:      $FetchRetries fetch retries, ${FetchTimeoutSeconds}s timeout, $DownloadAttempts install attempt(s)"
+Write-Host "Network:      $FetchRetries fetch retries, ${FetchTimeoutSeconds}s timeout, $NetworkConcurrency connection(s), $DownloadAttempts install attempt(s)"
+Write-Host "Build tools:  $NativeBuildTools"
 
 & wsl.exe --distribution $selectedDistribution --cd $PSScriptRoot -- bash @arguments
 $exitCode = $LASTEXITCODE

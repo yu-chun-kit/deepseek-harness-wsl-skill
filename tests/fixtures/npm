@@ -6,13 +6,17 @@ case "${1:-}" in
     printf '11.6.2\n'
     ;;
   prefix)
-    printf '%s/.local\n' "$HOME"
+    printf '%s\n' "${NPM_CONFIG_PREFIX:-/usr}"
     ;;
   root)
-    printf '%s/.local/lib/node_modules\n' "$HOME"
+    printf '%s/lib/node_modules\n' "${NPM_CONFIG_PREFIX:-/usr}"
     ;;
   list)
-    printf '{"dependencies":{}}\n'
+    if [[ -r "${NPM_CONFIG_PREFIX:-/usr}/lib/node_modules/@deepseek-ai/dsh/package.json" ]]; then
+      printf '{"dependencies":{"@deepseek-ai/dsh":{"version":"1.2.3"}}}\n'
+    else
+      printf '{"dependencies":{}}\n'
+    fi
     ;;
   view)
     case "$*" in
@@ -23,6 +27,13 @@ case "${1:-}" in
     esac
     ;;
   install)
+    if [[ ${MOCK_NPM_INSTALL_SUCCESS:-0} == 1 ]]; then
+      package_dir="${NPM_CONFIG_PREFIX:-/usr}/lib/node_modules/@deepseek-ai/dsh"
+      mkdir -p "$package_dir"
+      printf '{"name":"@deepseek-ai/dsh","version":"1.2.3"}\n' >"$package_dir/package.json"
+      printf 'mock install succeeded\n'
+      exit 0
+    fi
     printf 'npm error code ETIMEDOUT\n' >&2
     printf 'npm error request to https://registry.npmjs.org/hasown/-/hasown-2.0.4.tgz timed out\n' >&2
     exit 1

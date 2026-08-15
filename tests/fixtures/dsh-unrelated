@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+printf 'unrelated-dsh-should-not-run\n'
+exit 99

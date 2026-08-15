@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ ${1:-} == --version ]]; then
+  printf '1.2.3\n'
+  exit 0
+fi
+exit 2

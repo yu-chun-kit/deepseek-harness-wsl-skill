@@ -45,6 +45,8 @@ The default `-PackageManager auto` preserves the manager recorded by an earlier 
 
 DeepSeek's official distinction matters here: the published CLI is documented with `npx @deepseek-ai/dsh web`; `pnpm install`, `pnpm run build`, and `pnpm dsh web` are the repository-checkout workflow. The CLI also forwards profile plugin management to pnpm. This project supports an existing pnpm without claiming it is mandatory for the published package.
 
+When pnpm is selected, the installer still uses npm bundled with the required Linux Node.js installation for registry identity, repository, dist-tag, and integrity checks. pnpm controls the global package transaction; it does not replace those verification steps.
+
 At the time this project was authored, npm's official `latest` tag still resolved to an RC build, which is why the example explicitly includes `-AcceptPrerelease`. Remove that switch when `latest` resolves to a stable release.
 
 ### Fresh Windows installation is resumable, not magically reboot-free
@@ -148,7 +150,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scrip
 | `-PackageVersion <semver>` | Install one exact version |
 | `-FetchRetries 0..10` | Fetch retries for this run only; default 4 |
 | `-FetchTimeoutSeconds 30..900` | Per-request network timeout for this run; default 300 seconds |
+| `-NetworkConcurrency 1..50` | Registry connections for this run; default 15, lower for an unstable link |
 | `-DownloadAttempts 1..3` | Attempts for the same verified exact version; default 2 |
+| `-NativeBuildTools auto\|skip` | Preflight Ubuntu native build requirements, or explicitly skip them |
 | `-AcceptPrerelease` | Explicitly allow RC/beta versions |
 | `-Yes` | Accept the displayed package/prerequisite changes |
 | `-WhatIf` | Preview mutations; metadata checks may still use the network |
@@ -162,6 +166,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scrip
 | Windows 11 x64 + current WSL2 + Ubuntu 24.04 | PowerShell parsing, Bash parsing, status path, root boundary, and dry-run package verification tested |
 | Existing Ubuntu WSL2 with Linux Node.js 24 | Status and exact-version npm metadata dry-run tested |
 | System Node under `/usr` with an unwritable npm global prefix | User-owned prefix selection dry-run and isolated profile-persistence regression-tested |
+| Non-login npm/pnpm status and managed paths | New/legacy state, pnpm restoration, external/special-character prefixes, and exact `dsh` path regression-tested |
+| Native dependency and unstable downloads | Build-tools preflight plus bounded timeout/concurrency behavior covered by mock regression tests |
 | Fresh WSL install across administrator/reboot/first-run boundaries | Designed as a resumable flow; not automatically reboot-tested |
 | Windows 10 2004+ / ARM64 / non-Ubuntu distributions | Expected to require environment-specific validation; not claimed as tested |
 
@@ -175,12 +181,13 @@ Depending on the starting state, it may:
 
 - add Ubuntu 24.04 through the official `wsl --install` command;
 - install missing Ubuntu `git`, `curl`, and CA certificates;
+- install missing `build-essential` and Python 3 when a changed Harness version may need to compile `node-pty`;
 - clone a pinned nvm Git tag, verify its expected commit, and install the current Node.js LTS for the Linux user;
 - add one marked nvm loader block to `~/.profile`, after backing it up;
 - when the effective npm global prefix is not user-writable, create `~/.local` and add one marked `NPM_CONFIG_PREFIX`/`PATH` block to `~/.profile`, after backing it up;
 - install an exact `@deepseek-ai/dsh` version into that user's Linux npm prefix;
 - or, when selected, use an already configured Linux pnpm whose global bin is writable inside that user's home;
-- write a version-and-package-manager rollback record under `~/.local/state/deepseek-harness-wsl/`.
+- write a user-only version/package-manager/managed-path rollback record under `~/.local/state/deepseek-harness-wsl/`.
 
 It does **not** change the default distro, convert WSL1, edit `.wslconfig`, alter VPN/DNS/firewall settings, expose the Web UI beyond localhost, store API keys, modify a project, delete Harness data, or unregister a distribution.
 
@@ -237,14 +244,28 @@ If package metadata and `npm ping` work but one dependency tarball such as `*.tg
 For a more patient retry without changing persistent npm/pnpm configuration:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\setup-deepseek-harness-wsl.ps1 -Action install -FetchRetries 6 -FetchTimeoutSeconds 600 -DownloadAttempts 3 -AcceptPrerelease -Yes
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\setup-deepseek-harness-wsl.ps1 -Action install -FetchRetries 6 -FetchTimeoutSeconds 600 -NetworkConcurrency 4 -DownloadAttempts 3 -AcceptPrerelease -Yes
 ```
 
 Do not use `npm cache clean --force`, an unofficial mirror, `strict-ssl=false`, or `curl -k`. Switching to pnpm is an installation-policy choice, not a guarantee of a different network route to the same registry tarballs.
 
+The lower concurrency example is generic and optional. It does not detect, configure, or assume a particular VPN product.
+
+### `node-pty` or node-gyp cannot compile
+
+Harness currently reaches `node-pty` through its official dependency tree. On Ubuntu, node-pty/node-gyp may need `make`, Python 3, GCC, and G++. The default `-NativeBuildTools auto` checks these only when the target Harness version differs from the installed version, refreshes the apt index, and offers only the missing prerequisite packages—never a full `apt upgrade`.
+
+If sudo needs a password but the Agent process is non-interactive, the helper stops and prints the exact command to run inside that WSL distribution. It does not silently relaunch the installer as root.
+
 ### `dsh --help` appears stuck
 
 Developer-preview CLI behavior can change. Verification uses a timeout around `dsh --version` and does not kill unrelated Node processes.
+
+If status says `installed; absent from this non-login shell PATH`, the package is present. Windows-launched `wsl <command>` does not necessarily load the same profile as a new Linux login shell. The helper verifies the exact managed `dsh` path directly and does not source the user's whole profile.
+
+New installs record the managed prefix and bin directory in the helper's user-only state file. Status consults that record; for older installs, it can recognize the helper's standard `~/.local` package location. The installer does not add parallel prefix/PATH definitions to `.bashrc` and `.npmrc`, which could create conflicting sources of truth.
+
+`wsl.exe -d <Distro> -- dsh` directly launches a process and is not guaranteed to read any shell startup file. For Windows-side automation, use this Skill's status/launcher path or the reported absolute Linux executable; do not keep adding startup-file entries to make a direct process launch behave like a login shell.
 
 ## Uninstall
 
@@ -267,6 +288,8 @@ Removing Node.js, user settings, a WSL distribution, or WSL itself is intentiona
 - [npm configuration: fetch retries and timeouts](https://docs.npmjs.com/cli/using-npm/config/)
 - [pnpm setup and global bin behavior](https://pnpm.io/cli/setup)
 - [pnpm request settings](https://pnpm.io/settings#request-settings)
+- [node-pty Linux build dependencies](https://github.com/microsoft/node-pty#dependencies)
+- [node-gyp Unix prerequisites](https://github.com/nodejs/node-gyp#on-unix)
 
 ## License
 
