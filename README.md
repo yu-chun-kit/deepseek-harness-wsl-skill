@@ -99,6 +99,9 @@ dsh web
 
 打开 <http://127.0.0.1:3080>，进入 **Settings → Models**，在页面中输入 DeepSeek API key。不要把 key 粘贴到 agent 对话、命令行、仓库、`.env` 或 shell history 中。
 
+> [!CAUTION]
+> **不要把 `dsh web` 的监听地址改成 `0.0.0.0`（如 `--host 0.0.0.0`），当前预览版 `dsh@0.1.0-rc.8` 在 WSL2 下必挂 / 无法启动，且会触发浏览器信任拦截（`forbidden`）。保持默认 `127.0.0.1:3080`，如需外网访问请用 `Tailscale Serve/Funnel` 或 `--trusted-host` + `publicBaseUrl` 转发，而不是改 bind host。
+
 Linux 工具密集型项目建议放在 `~/projects` 等 WSL Linux 文件系统内，而不是 `/mnt/c` 或 `/mnt/e`。Windows 挂载盘可以互通，但 Git/npm I/O 和 Linux 权限语义通常不如 WSL ext4。
 
 ## 安装 Codex Skill

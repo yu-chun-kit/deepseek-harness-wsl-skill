@@ -8,3 +8,6 @@
 task_plan.md
 findings.md
 progress.md
+
+# Private local helpers and logs.
+.local/
