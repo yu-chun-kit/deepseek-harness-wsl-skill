@@ -10,7 +10,7 @@ Read this reference only when WSL is absent or the user asks about startup, RAM,
 - `%USERPROFILE%\.wslconfig` applies across all WSL2 distributions. Microsoft recommends WSL Settings for changes. Applying changes may require the VM to stop; `wsl --shutdown` terminates every running distribution.
 - Each WSL2 distribution uses a dynamically expanding virtual disk. Do not delete or manipulate `ext4.vhdx` directly. Use Microsoft's current disk-space guidance for the installed WSL version.
 - DeepSeek has not published a supported Harness RAM minimum, per-session usage, or concurrent-session formula. The cloud model weights are not loaded into local WSL; local usage comes from Harness, shells, builds, tests, language servers, and other agent subprocesses.
-- Official implementation notes measured about 1.31 MB per live standard agent and 57.8 MB for 50 such agents in one preset-composition test, but a different 1,307,073-event session restore reached about 1,060 MiB peak RSS after optimization. Treat both only as implementation profiles. They exclude arbitrary agent-launched work and do not define a 2 GiB recommendation.
+- Archived August 2026 implementation notes measured about 1.31 MB per live standard agent and 57.8 MB for 50 such agents in one test; a different 1,307,073-event restore reached about 1,060 MiB peak RSS. These are historical measurements, not current-release sizing benchmarks. They exclude arbitrary agent-launched work and do not define a 2 GiB recommendation.
 
 ## Decision flow
 
@@ -31,9 +31,9 @@ Read this reference only when WSL is absent or the user asks about startup, RAM,
 ## Primary sources
 
 - [DeepSeek Harness repository](https://github.com/deepseek-ai/deepseek-harness)
-- [DeepSeek per-session preset implementation measurements](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-08-03-per-session-agent-presets.md)
-- [DeepSeek large-session restore implementation measurements](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-08-05-large-session-jsonl-restore-pipeline.md)
-- [DeepSeek source development prerequisites](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/development.md)
+- [DeepSeek per-session preset implementation measurements](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/.agents/notes/archived/architecture/2026-08-03-per-session-agent-presets.md)
+- [DeepSeek large-session restore implementation measurements](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/.agents/notes/archived/architecture/2026-08-05-large-session-jsonl-restore-pipeline.md)
+- [DeepSeek source development prerequisites](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/docs/development.md)
 - [Microsoft WSL installation](https://learn.microsoft.com/windows/wsl/install)
 - [Microsoft advanced WSL settings](https://learn.microsoft.com/windows/wsl/wsl-config)
 - [Microsoft WSL basic commands](https://learn.microsoft.com/windows/wsl/basic-commands)

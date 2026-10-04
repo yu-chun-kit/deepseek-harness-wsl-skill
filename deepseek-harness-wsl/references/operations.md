@@ -1,5 +1,7 @@
 # Operational guide
 
+Read the dated [current-release audit](current-release.md) first. As checked on 2026-10-04, `latest` and `next` resolve to `0.2.0-rc.2`; `alpha` resolves to `0.2.1-alpha.1`. Re-resolve at execution time. A package update does not migrate custom profiles/plugins or verify Web boot.
+
 ## State transitions
 
 1. Inspect without mutation.
@@ -20,7 +22,7 @@ The helper is idempotent. Re-running it reuses the selected distribution and exi
 
 - `-Action status|install|update|uninstall`
 - `-Distribution <name>`: require an exact installed distribution name.
-- `-Channel latest|next`: resolve an npm dist-tag; defaults to `latest`.
+- `-Channel latest|next|alpha`: resolve an npm dist-tag; defaults to `latest`. Select alpha only for an explicit experiment.
 - `-PackageManager auto|npm|pnpm`: preserve the recorded manager, otherwise prefer an existing usable Linux pnpm and fall back to npm.
 - `-PackageVersion <semver>`: bypass the channel and request an exact version.
 - `-FetchRetries 0..10`: package-manager fetch retries; defaults to 4 and applies only to the launched process.
@@ -33,6 +35,14 @@ The helper is idempotent. Re-running it reuses the selected distribution and exi
 - `-InstallWslIfMissing:$true`: explicitly opt in to adding WSL/Ubuntu when none is usable; default is false.
 - `-SkipNodeInstall`: fail instead of installing Linux Node when it is missing or incompatible.
 - `-WhatIf`: report planned mutations. Network metadata checks may still occur.
+
+## Current Web and preset boundaries
+
+- Open the authenticated URL printed at startup locally; its process token is sensitive and must not enter public output. Local launches normally open the browser automatically; `--no-open` suppresses that handoff.
+- Add/select a workspace in the UI. The invoking directory alone does not select a fresh Web workspace.
+- RC `0.2.0-rc.2` startup rejects `--host 0.0.0.0`; keep loopback. `--trusted-host` is an authority allowance, not authentication or a bind-address change. `--public-url` is an alpha feature.
+- Current presets are `dsh-agent-preset` declarations in Web bundle patches. User edits persist in the Web profile's `cordis.patch.yml`; old `.agent-presets` directory generation is unsupported.
+- The Anchored helper can inspect/remove owned legacy copies but refuses generation on current bundle releases. See [anchored-presets.md](anchored-presets.md).
 
 ## Files changed
 

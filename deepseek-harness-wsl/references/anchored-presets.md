@@ -1,4 +1,10 @@
-# Experimental anchored presets
+# Legacy experimental anchored presets
+
+## Current release boundary (2026-10-04)
+
+Official `0.2.0-rc.2` presets are bundle patch declarations in `@deepseek-ai/dsh-web-app/presets`; the CLI no longer ships `config/agent-presets`. This generator has not been ported to that registry/API. `status` explains the missing legacy layout and any helper-owned old copies; `install`/`update`, including `-WhatIf`, refuse generation. `uninstall` still removes only copies with this helper's ownership manifest, even after the official CLI is removed.
+
+The following mechanics and install/update commands are **historical, for compatible legacy directory layouts only**. The reported scores do not validate current DSH. Do not downgrade a working installation solely for this experiment. See [current-release.md](current-release.md).
 
 ## What the experiment changes
 
@@ -10,7 +16,7 @@ The helper generates new user presets named `anchored-standard`, `anchored-code`
 - first request: suppress automatic `agent-instructions` and `skill-catalog` messages;
 - after the first durable `tool/call` or `assistant/message`: expose the copied preset's complete tool catalog and normal automatic context.
 
-This is not identical to official Minimal. Minimal exposes persistent Bash plus `str_replace_editor`, has no compaction, and stays minimal for the whole session. The anchored variants use the normal preset's shell/filesystem implementations and change catalog once.
+This differs from both early Minimal (persistent Bash plus editor) and current Minimal (one persistent Bash/PowerShell tool). Minimal has no compaction and stays minimal for the whole session. The legacy anchored variants use the normal preset's shell/filesystem implementations and change catalog once. Generated persona fields preserve the source release's `text` or `prefix` schema.
 
 ## Why use a script instead of a prompt
 

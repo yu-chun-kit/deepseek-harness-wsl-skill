@@ -3,7 +3,7 @@ param(
     [ValidateSet('status', 'install', 'update', 'uninstall')]
     [string]$Action = 'install',
     [string]$Distribution,
-    [ValidateSet('latest', 'next')]
+    [ValidateSet('latest', 'next', 'alpha')]
     [string]$Channel = 'latest',
     [ValidateSet('auto', 'npm', 'pnpm')]
     [string]$PackageManager = 'auto',
@@ -26,17 +26,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $script:UbuntuBaseline = 'Ubuntu-24.04'
+. (Join-Path $PSScriptRoot 'wsl-distributions.ps1')
 
 function Test-IsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = [Security.Principal.WindowsPrincipal]::new($identity)
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-}
-
-function Get-WslDistributions {
-    $items = @(& wsl.exe --list --quiet 2>$null)
-    return @($items | ForEach-Object { ($_ -replace "`0", '').Trim() } |
-        Where-Object { $_ -and $_ -notmatch '^docker-desktop(?:-data)?$' })
 }
 
 function Show-HostResourceSummary {
@@ -123,7 +118,7 @@ if (-not $wslCommand) {
     Install-WslBaseline
 }
 
-$distributions = Get-WslDistributions
+$distributions = @(Get-WslDistributions)
 if ($Distribution) {
     if ($Distribution -notin $distributions) {
         if ($distributions.Count -eq 0) { Install-WslBaseline }
@@ -138,13 +133,7 @@ if ($Distribution) {
     throw "Multiple WSL distributions are installed. Choose one explicitly with -Distribution. Available: $($distributions -join ', ')"
 }
 
-$verboseList = @(& wsl.exe --list --verbose 2>$null) -join "`n"
-$cleanVerboseList = $verboseList -replace "`0", ''
-$selectedPattern = [regex]::Escape($selectedDistribution)
-$selectedLine = ($cleanVerboseList -split "`r?`n" | Where-Object { $_ -match $selectedPattern } | Select-Object -First 1)
-if ($selectedLine -and $selectedLine -notmatch '\s2\s*$') {
-    throw "'$selectedDistribution' is not confirmed as WSL2. This skill will not convert it automatically."
-}
+Assert-Wsl2Distribution -Distribution $selectedDistribution -VerboseLines @(& wsl.exe --list --verbose 2>$null)
 
 $windowsScriptPath = Join-Path $PSScriptRoot 'setup-in-wsl.sh'
 if (-not (Test-Path -LiteralPath $windowsScriptPath)) {

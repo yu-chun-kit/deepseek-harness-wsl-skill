@@ -9,11 +9,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'wsl-distributions.ps1')
 if ($env:OS -ne 'Windows_NT') { throw 'Run this entry point from Windows PowerShell.' }
 if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) { throw 'WSL is not installed. Install Harness first.' }
 
-$distributions = @(& wsl.exe --list --quiet 2>$null) | ForEach-Object { ($_ -replace "`0", '').Trim() } |
-    Where-Object { $_ -and $_ -notmatch '^docker-desktop(?:-data)?$' }
+$distributions = @(Get-WslDistributions)
 if ($Distribution) {
     if ($Distribution -notin $distributions) { throw "Distribution '$Distribution' is not installed." }
     $selected = $Distribution
@@ -24,6 +24,8 @@ if ($Distribution) {
 } else {
     throw "Multiple WSL distributions are installed. Choose -Distribution explicitly: $($distributions -join ', ')"
 }
+
+Assert-Wsl2Distribution -Distribution $selected -VerboseLines @(& wsl.exe --list --verbose 2>$null)
 
 $helper = Join-Path $PSScriptRoot 'manage-anchored-presets-in-wsl.sh'
 if (-not (Test-Path -LiteralPath $helper)) { throw "Missing helper: $helper" }

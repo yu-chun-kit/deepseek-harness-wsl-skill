@@ -1,0 +1,23 @@
+{
+  "checkedAt": "2026-10-04",
+  "distTags": {
+    "alpha": "0.2.1-alpha.1",
+    "next": "0.2.0-rc.2",
+    "latest": "0.2.0-rc.2"
+  },
+  "publishedAt": "2026-09-29T09:56:27.792Z",
+  "repository": {
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "type": "git",
+    "directory": "apps/cli"
+  },
+  "dist": {
+    "tarball": "https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-0.2.0-rc.2.tgz",
+    "integrity": "sha512-EAJ3gPNcVt/uv8X19PMm9NkVhWgT7xXNMk0UKCVm+IQ5rpSQOcsMUa0HWlnYYVybKMsccjcRB21vVVsaXQ6IdA=="
+  },
+  "sourceTag": "dsh-v0.2.0-rc.2",
+  "files": {
+    "cli-package.json": "0a85203e3e907dd2e3bec34324a2494758ca6cdee234b07090a7c8df0b11acac",
+    "minimal.patch.yml": "71ef887f43d8a37931ba3b014e5b116f79018af873d06625fb22e280a23c1dfc"
+  }
+}

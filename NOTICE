@@ -9,3 +9,8 @@ https://github.com/xiaobright/dsh-anchored-standard/tree/6472c1c9431dcfd9072be23
 
 Generated agent presets copy the user's locally installed official DeepSeek Harness
 preset. Those copied portions remain subject to the upstream DeepSeek Harness license.
+
+tests/fixtures/upstream-0.2.0-rc.2 contains the published CLI manifest and Web
+Minimal patch from DeepSeek Harness dsh-v0.2.0-rc.2 (MIT).
+Copyright (c) 2026 DeepSeek.
+https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.0-rc.2

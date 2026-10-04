@@ -5,7 +5,7 @@
 - DeepSeek Harness is developed by DeepSeek AI and published as `@deepseek-ai/dsh` from the `deepseek-ai/deepseek-harness` repository.
 - Harness is in developer preview and its maintainers warn of compatibility-breaking changes.
 - DeepSeek's V4 technical report describes an internal code-agent evaluation framework with a minimal tool set: one Bash tool and one file-edit tool.
-- The public Harness minimal preset uses persistent Bash plus `str_replace_editor`, with the fixed system prompt `You are a helpful software engineer assistant.`
+- In `0.2.0-rc.2`, the public Minimal preset exposes one persistent shell (`bash` on Linux/macOS or `pwsh` on Windows) with a fixed complete system persona. Early releases also exposed `str_replace_editor`; the September 2026 simplification removed it. Historical two-tool descriptions are not the current catalog.
 - The public minimal preset was added after the V4 technical report. It aligns with the previously disclosed evaluation shape; it was not the public repository preset used during earlier model training.
 - Native Windows support exists. WSL is a compatibility-oriented path for reproducing Linux/Bash tool semantics, not the only supported platform.
 - DeepSeek's public Harness documentation does not publish a supported RAM minimum, a per-session memory figure, or a concurrent-session sizing formula.
@@ -20,6 +20,7 @@
 - A prompt-sensitive result alone cannot distinguish training overfit from tool-schema matching, reasoning-trace handling, sampling, context management, or shell differences.
 - A community Anchored Standard experiment reported 98 and 99 on one private frozen task after using Minimal-aligned first-request conditions and then restoring Standard tools. Two runs on one task do not establish general improvement, causality, or a training defect.
 - No published benchmark currently supports the generated Anchored Code/PTC or Anchored Cordis variants. They are explicit extrapolations. Cordis's specialized authoring persona is replaced by the fixed Minimal persona in the experimental copy.
+- The legacy Anchored generator is not compatible with current bundle-declared presets. Old experimental scores establish neither current compatibility nor an improvement on the RC baseline.
 
 Use language such as:
 
@@ -30,9 +31,9 @@ Do not state that Linux is required, that Windows is unsupported, or that overfi
 ## Primary sources
 
 - [DeepSeek Harness repository](https://github.com/deepseek-ai/deepseek-harness)
-- [Harness CLI behavior and minimal preset](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/cli/reference/README.md)
-- [Minimal preset configuration](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/cli/config/agent-presets/minimal/agent.cordis.yml)
-- [Official Minimal RL composition implementation note](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/bug-fix/2026-08-10-minimal-preset-owns-rl-composition.md)
+- [Harness CLI behavior and minimal preset](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/apps/cli/reference/README.md)
+- [Minimal preset configuration](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/packages/bundle/web-app/presets/minimal.patch.yml)
+- [Official Minimal RL composition implementation note](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/.agents/notes/archived/bug-fix/2026-08-10-minimal-preset-owns-rl-composition.md)
 - [DeepSeek V4 technical report](https://arxiv.org/html/2606.19348v1)
 - [Microsoft WSL installation](https://learn.microsoft.com/windows/wsl/install)
 - [Microsoft WSL filesystem guidance](https://learn.microsoft.com/windows/wsl/filesystems)

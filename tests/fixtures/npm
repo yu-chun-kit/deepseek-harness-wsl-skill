@@ -20,8 +20,8 @@ case "${1:-}" in
     ;;
   view)
     case "$*" in
-      *dist-tags.latest*) printf '"1.2.3"\n' ;;
-      *repository.url*) printf '"git+https://github.com/deepseek-ai/deepseek-harness.git"\n' ;;
+      *dist-tags.latest*|*dist-tags.next*|*dist-tags.alpha*) printf '"%s"\n' "${MOCK_NPM_TARGET_VERSION:-1.2.3}" ;;
+      *repository.url*) printf '"%s"\n' "${MOCK_NPM_REPOSITORY:-git+https://github.com/deepseek-ai/deepseek-harness.git}" ;;
       *dist.integrity*) printf '"sha512-test-integrity"\n' ;;
       *) exit 2 ;;
     esac

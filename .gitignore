@@ -11,3 +11,16 @@ progress.md
 
 # Private local helpers and logs.
 .local/
+
+# Local voice-input bridge directories (created by the voice-dsh-plugin daemon).
+voice-in/
+voice-out/
+voice-done/
+
+# Machine-local vocabulary, attachments, configuration and recovery snapshots.
+voice-vocab.json
+.codex-remote-attachments/
+.agents/plugins/marketplace.json
+*.bak-*
+experiments/**/.runtime-*/
+experiments/dsh-recovery-*/

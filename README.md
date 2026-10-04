@@ -9,9 +9,18 @@
 > [!IMPORTANT]
 > 本项目不是 DeepSeek 官方 Skill。DeepSeek Harness 目前仍处于 Developer Preview，未来可能出现破坏兼容性的更新。本项目不声称 DeepSeek-V4-Pro 已被证明“过拟合 Harness”，也不声称 Linux 会让模型本身变得更聪明。
 
+## 版本基线（2026-10-04 核对）
+
+| 官方 npm channel | 精确版本 | 发布日期（UTC） |
+|---|---|---|
+| `latest`、`next` | `0.2.0-rc.2` | 2026-09-29 |
+| `alpha` | `0.2.1-alpha.1` | 2026-10-03 |
+
+安装器每次执行都会重新解析 channel；表格是有日期的记录，不是固定安装目标。RC 和 alpha 仍需 `-AcceptPrerelease`；只有明确试验 alpha 时才使用 `-Channel alpha`。preset 存储、Minimal 工具、Web 验证及插件迁移的变化见[版本兼容性查核](deepseek-harness-wsl/references/current-release.md)。
+
 ## 为什么使用 WSL？
 
-DeepSeek V4 技术报告披露的 code-agent 评测使用了 Bash 和文件编辑工具。公开 Harness 的 Minimal preset 也采用 persistent Bash 与 `str_replace_editor`。
+DeepSeek V4 技术报告披露的 code-agent 评测使用了 Bash 和文件编辑工具。早期公开 Harness Minimal preset 采用 persistent Bash 与 `str_replace_editor`；当前版本只暴露一个 persistent shell，不能把历史双工具形态当作新版工具目录。
 
 Harness 同样支持原生 Windows。本项目推荐 WSL2，是为了获得更接近 Linux 的路径、权限、信号、Shell 行为和常见 SWE/terminal 工具；这是兼容性和可复现性选择，不是模型推理加速。
 
@@ -30,7 +39,7 @@ Harness 同样支持原生 Windows。本项目推荐 WSL2，是为了获得更�
 
 Microsoft 当前公布的 WSL2 默认 VM 上限为：Windows 总内存的 50%、全部逻辑处理器，以及 Windows 内存 25%（向上取到最接近的 GB）的 swap。这些是上限，并非 Windows 开机时立即预占。WSL 在被命令或依赖应用调用时启动，之后由 WSL 管理 VM 生命周期。
 
-DeepSeek 没有公布 Harness 的最低 RAM、每个 session 的 RAM 或多会话计算公式，因此本项目不会把 `memory=2GB` 标为推荐值。官方工程笔记曾测得 50 个 standard agents 约占 57.8 MB；另一项 130 万事件大型 session 恢复测试的优化后峰值 RSS 约为 1,060 MiB。两者都是特定实现测量，不是系统要求，也不包括 agent 启动的编译、测试和语言服务器等工作负载。
+DeepSeek 没有公布 Harness 的最低 RAM、每个 session 的 RAM 或多会话计算公式，因此本项目不会把 `memory=2GB` 标为推荐值。已归档的 2026 年 8 月工程笔记曾测得 50 个 standard agents 约占 57.8 MB；另一项 130 万事件大型 session 恢复测试的优化后峰值 RSS 约为 1,060 MiB。两者都是特定实现测量，不是系统要求，也不包括 agent 启动的编译、测试和语言服务器等工作负载。
 
 > [!CAUTION]
 > `%USERPROFILE%\.wslconfig` 会影响所有 WSL2 发行版，包括 Docker Desktop 和其他 Linux 工作。本项目只报告该文件是否存在，绝不会自动读取内容、创建、合并或覆盖它，也不会自动套用 2GB 上限。
@@ -97,10 +106,11 @@ cd ~/projects/your-project
 dsh web
 ```
 
-打开 <http://127.0.0.1:3080>，进入 **Settings → Models**，在页面中输入 DeepSeek API key。不要把 key 粘贴到 agent 对话、命令行、仓库、`.env` 或 shell history 中。
+打开 `dsh web` 输出的带验证信息的启动 URL；本地启动通常会自动打开浏览器。默认地址是 `http://127.0.0.1:3080`，首次访问需要用输出 URL 的进程 token 换取签名 cookie，因此不要分享或提交该 URL。`dsh web --no-open` 可关闭自动打开浏览器。
 
-> [!CAUTION]
-> **不要把 `dsh web` 的监听地址改成 `0.0.0.0`（如 `--host 0.0.0.0`），当前预览版 `dsh@0.1.0-rc.8` 在 WSL2 下必挂 / 无法启动，且会触发浏览器信任拦截（`forbidden`）。保持默认 `127.0.0.1:3080`，如需外网访问请用 `Tailscale Serve/Funnel` 或 `--trusted-host` + `publicBaseUrl` 转发，而不是改 bind host。
+先在 **Choose workspace** 中添加并选择项目目录，再进入 **Settings → Models**，在页面中输入 DeepSeek API key；保存模型配置立即生效，无需重启。不要把 key 粘贴到 agent 对话、命令行、仓库、`.env` 或 shell history 中。
+
+`0.2.0-rc.2` 的官方 Web 启动代码会明确拒绝 `--host 0.0.0.0`。保持默认 loopback；`--trusted-host` 只增加允许的 host authority，不替代身份验证，也不改变监听接口。`--public-url` 是 `0.2.1-alpha.1` 新功能，不属于当前 RC。
 
 Linux 工具密集型项目建议放在 `~/projects` 等 WSL Linux 文件系统内，而不是 `/mnt/c` 或 `/mnt/e`。Windows 挂载盘可以互通，但 Git/npm I/O 和 Linux 权限语义通常不如 WSL ext4。
 
@@ -124,30 +134,21 @@ Copy-Item -LiteralPath .\deepseek-harness-wsl -Destination $destination -Recurse
 
 启动 `dsh web`，创建 session 时选择 **极简模式 / Minimal**。它是 Web UI 中的 agent preset，不是 `dsh minimal` CLI 子命令。
 
+`0.2.0-rc.2` 的 Minimal 只暴露一个 persistent shell：Linux/macOS 为 `bash`，Windows 为 `pwsh`。默认不再挂载 `str_replace_editor`；仍使用固定完整 persona 且不挂载 compaction。Web preset 与独立 `sdk-minimal` profile 是不同入口。
+
 Minimal 中表现更好可能来自训练/评测分布匹配、工具协议、reasoning trace、上下文策略或 Shell 差异。没有受控的跨 Harness 消融实验，就不能把“过拟合”写成已证实事实。
 
-## 实验性 Anchored 模式
+## 历史 Anchored 实验
 
-后续社区实验发现，影响可能不只是一句 system prompt，而是**第一次请求**同时看到的 persona、工具目录、输出上限和自动注入上下文。一个 Anchored Standard 实验让首轮只看到 Bash/`read`，首个工具调用或回复后再恢复完整 Standard 工具；它在一个私有冻结任务的两次运行中得到 98/99。这是有价值的线索，但仍不是通用基准，也不能证明 DeepSeek 存在训练 bug。
-
-本项目因此提供可选脚本，为当前已安装的官方 preset 生成独立副本：
-
-- `Anchored Standard`：有上述单任务、两次运行的社区证据；
-- `Anchored PTC / Code`：同一机制的未验证外推；
-- `Anchored Cordis / Creator`：诊断用途外推，而且会失去 Cordis 原本的专用 system persona，不建议作为日常默认。
-
-它不是 prompt 模板，因为普通 prompt 无法改变 API 可见工具 schema、首轮 `max_tokens` 或 Harness 自动注入内容。脚本不会修改官方 preset 或 `node_modules`；Harness 更新后可以从新版本重新生成。
+可选 Anchored 生成器面向旧版 `config/agent-presets/<id>` 目录格式。当前 `0.2.0-rc.2` 已改用 bundle patch 声明，不再附带这个目录。工具的 `status` 会说明兼容边界，`install`／`update`（包括预览）会拒绝生成，不会把旧副本自动迁移到新版 profile。
 
 ```powershell
-# 先检查与预览；多发行版时必须写明 -Distribution
 powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\manage-anchored-presets.ps1 -Action status -Distribution Ubuntu -Mode all
-powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\manage-anchored-presets.ps1 -Action install -Distribution Ubuntu -Mode all -WhatIf
-
-# 接受实验边界后安装
-powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\manage-anchored-presets.ps1 -Action install -Distribution Ubuntu -Mode all -Yes
+# 明确删除带有本工具 ownership manifest 的旧副本。
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\manage-anchored-presets.ps1 -Action uninstall -Distribution Ubuntu -Mode all -Yes
 ```
 
-完全重启 `dsh web`，新建空白 session 后再选择 anchored preset；不要把已有 session 切换过去。完整原理、证据等级、更新与卸载边界见 [anchored-presets.md](deepseek-harness-wsl/references/anchored-presets.md)。
+早期 Standard 实验在一项私有任务的两次运行中得到 98、99，不能证明新版 DSH 或 Code/Cordis 推演的效果。历史机制与旧版命令保留在 [anchored-presets.md](deepseek-harness-wsl/references/anchored-presets.md)。当前 RC 请使用官方 presets。
 
 ## 安全更新与回滚
 
@@ -162,7 +163,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scrip
 回滚到已知版本：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\setup-deepseek-harness-wsl.ps1 -Action install -PackageVersion 0.1.0-rc.6 -AcceptPrerelease -Yes
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\setup-deepseek-harness-wsl.ps1 -Action install -PackageVersion 0.2.0-rc.1 -AcceptPrerelease -Yes
 ```
 
 ## 主要参数
@@ -174,7 +175,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scrip
 | `-Action update` | 解析并安装所选 channel 的当前精确版本 |
 | `-Action uninstall` | 只移除 Harness，保留 Node、数据、发行版和 WSL |
 | `-Distribution <name>` | 使用明确指定的已安装发行版 |
-| `-Channel latest\|next` | 选择 npm dist-tag |
+| `-Channel latest\|next\|alpha` | 选择 npm dist-tag |
 | `-PackageManager auto\|npm\|pnpm` | 沿用记录的管理器，或选择现有可用 pnpm/npm |
 | `-PackageVersion <semver>` | 安装指定精确版本 |
 | `-FetchRetries 0..10` | 本次运行的下载重试次数，默认 4 |
@@ -247,10 +248,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scrip
 ## 主要来源
 
 - [DeepSeek Harness 官方仓库](https://github.com/deepseek-ai/deepseek-harness)
-- [DeepSeek Harness 源码开发要求](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/development.md)
-- [DeepSeek Windows PowerShell 支持说明](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/feature/2026-08-01-windows-pwsh-default.md)
-- [DeepSeek per-session agent 测量](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-08-03-per-session-agent-presets.md)
-- [DeepSeek 大型 session 恢复测量](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-08-05-large-session-jsonl-restore-pipeline.md)
+- [DeepSeek Harness 源码开发要求](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/docs/development.md)
+- [DeepSeek Windows PowerShell 支持说明](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/.agents/notes/archived/feature/2026-08-01-windows-pwsh-default.md)
+- [DeepSeek per-session agent 测量](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/.agents/notes/archived/architecture/2026-08-03-per-session-agent-presets.md)
+- [DeepSeek 大型 session 恢复测量](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/.agents/notes/archived/architecture/2026-08-05-large-session-jsonl-restore-pipeline.md)
 - [DeepSeek V4 技术报告](https://arxiv.org/html/2606.19348v1)
 - [Microsoft：安装 WSL](https://learn.microsoft.com/windows/wsl/install)
 - [Microsoft：WSL 高级设置](https://learn.microsoft.com/windows/wsl/wsl-config)

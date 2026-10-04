@@ -3,7 +3,6 @@ set -euo pipefail
 
 PACKAGE='@deepseek-ai/dsh'
 REGISTRY='https://registry.npmjs.org/'
-OFFICIAL_REPOSITORY='github.com/deepseek-ai/deepseek-harness'
 ACTION='install'
 CHANNEL='latest'
 PACKAGE_VERSION=''
@@ -42,7 +41,7 @@ while (($#)); do
 done
 
 case "$ACTION" in status|install|update|uninstall) ;; *) printf 'Invalid action: %s\n' "$ACTION" >&2; exit 2 ;; esac
-case "$CHANNEL" in latest|next) ;; *) printf 'Invalid channel: %s\n' "$CHANNEL" >&2; exit 2 ;; esac
+case "$CHANNEL" in latest|next|alpha) ;; *) printf 'Invalid channel: %s\n' "$CHANNEL" >&2; exit 2 ;; esac
 case "$PACKAGE_MANAGER" in auto|npm|pnpm) ;; *) printf 'Invalid package manager: %s\n' "$PACKAGE_MANAGER" >&2; exit 2 ;; esac
 [[ $FETCH_RETRIES =~ ^([0-9]|10)$ ]] || { printf 'Fetch retries must be from 0 through 10.\n' >&2; exit 2; }
 [[ $FETCH_TIMEOUT_SECONDS =~ ^[0-9]+$ ]] && ((FETCH_TIMEOUT_SECONDS >= 30 && FETCH_TIMEOUT_SECONDS <= 900)) || {
@@ -475,7 +474,7 @@ verify_metadata() {
   printf 'Target:        %s\n' "$version"
   printf 'Repository:    %s\n' "$repository"
   printf 'Integrity:     %s\n' "$integrity"
-  [[ $repository == *"$OFFICIAL_REPOSITORY"* ]] || { printf 'Package repository is not the expected official repository.\n' >&2; return 1; }
+  [[ $repository =~ ^(git\+)?https://github\.com/deepseek-ai/deepseek-harness(\.git)?/?$ ]] || { printf 'Package repository is not the expected official repository.\n' >&2; return 1; }
   [[ -n $integrity && $integrity != null ]] || { printf 'Package integrity metadata is missing.\n' >&2; return 1; }
 }
 

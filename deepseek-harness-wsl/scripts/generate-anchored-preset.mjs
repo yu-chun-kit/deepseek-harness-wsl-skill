@@ -6,6 +6,9 @@ const [sourceArg, targetArg, pluginArg, mode, harnessVersion] = process.argv.sli
 if (!sourceArg || !targetArg || !pluginArg || !['standard', 'code', 'cordis'].includes(mode)) {
   throw new Error('usage: generate-anchored-preset.mjs SOURCE TARGET PLUGIN standard|code|cordis VERSION')
 }
+if (/^(?:0\.(?:[2-9]|[1-9]\d+)\.|[1-9]\d*\.)/.test(harnessVersion ?? '')) {
+  throw new Error('anchored generation is unsupported for bundle-based Harness releases; no preset was changed')
+}
 
 const source = resolve(sourceArg)
 const target = resolve(targetArg)
@@ -26,11 +29,12 @@ if (personaOffset < 0 || personaEnd < 0 || normalized.indexOf(personaStart, pers
   throw new Error(`official ${mode} persona shape changed; refusing an unsafe rewrite`)
 }
 const sourcePersona = normalized.slice(personaOffset, personaEnd)
-const ordinaryPersona = `${personaStart}    text: >-\n      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.\n`
+const ordinaryPersona = `${personaStart}    prefix: >-\n      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.\n`
+const legacyOrdinaryPersona = `${personaStart}    text: >-\n      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.\n`
 const cordisPersonaLooksOfficial = sourcePersona.includes('running on the DeepSeek Harness')
   && sourcePersona.includes('Load the `editing-cordis-compositions` skill')
 if ((mode === 'cordis' && !cordisPersonaLooksOfficial)
-    || (mode !== 'cordis' && sourcePersona !== ordinaryPersona)) {
+    || (mode !== 'cordis' && sourcePersona !== ordinaryPersona && sourcePersona !== legacyOrdinaryPersona)) {
   throw new Error(`official ${mode} persona text changed; refusing an unsafe rewrite`)
 }
 for (const required of ['@deepseek-ai/dsh-tool-bash', '@deepseek-ai/dsh-tool-pwsh', '@deepseek-ai/dsh-tool-fs']) {
@@ -43,7 +47,8 @@ await cp(plugin, join(target, 'anchored-tool-bootstrap.mjs'), { force: false, er
 await cp(join(dirname(plugin), 'NOTICE'), join(target, 'NOTICE'), { force: false, errorOnExist: true })
 
 const bootstrap = `# Experimental first-request anchor. This row must remain first.\n- id: anchored-tool-bootstrap\n  name: ./anchored-tool-bootstrap.mjs\n  config:\n    shellTools: [bash, pwsh]\n    commonTools: [read]\n    promoteOn: either\n    bootstrapMaxTokens: 1024\n    suppressedContextSources: [agent-instructions, skill-catalog]\n\n`
-const persona = `- id: persona\n  name: '@deepseek-ai/dsh-persona'\n  config:\n    text: You are a helpful software engineer assistant.\n    complete: true\n    includeRuntimeContext: false\n`
+const personaKey = sourcePersona.includes('    prefix:') ? 'prefix' : 'text'
+const persona = `- id: persona\n  name: '@deepseek-ai/dsh-persona'\n  config:\n    ${personaKey}: You are a helpful software engineer assistant.\n    complete: true\n    includeRuntimeContext: false\n`
 const generated = bootstrap + normalized.slice(0, personaOffset) + persona + normalized.slice(personaEnd)
 await writeFile(join(target, 'agent.cordis.yml'), generated, 'utf8')
 

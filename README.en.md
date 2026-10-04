@@ -15,9 +15,18 @@ It installs the official npm package, `@deepseek-ai/dsh`, into Linux—not a for
 
 WSL2 的定位是「相容性優先」：讓 Windows 使用者更接近 DeepSeek 技術報告披露的 `bash + file-edit` code-agent 評測形態。這不是 DeepSeek 官方的 Windows/WSL 效能結論，也沒有公開的嚴格 A/B 測試證明模型在 Linux 上本質更強。
 
+## Release baseline (checked 2026-10-04)
+
+| Official npm channel | Exact version | Published (UTC) |
+|---|---|---|
+| `latest`, `next` | `0.2.0-rc.2` | 2026-09-29 |
+| `alpha` | `0.2.1-alpha.1` | 2026-10-03 |
+
+The installer resolves the chosen channel at execution time; these are dated observations, not pinned defaults. RC and alpha builds still require `-AcceptPrerelease`. Use `-Channel alpha` only for a deliberate alpha trial. See the [release compatibility audit](deepseek-harness-wsl/references/current-release.md) for changed preset storage, Minimal tools, Web authentication, and plugin migration boundaries.
+
 ## Why WSL?
 
-DeepSeek's V4 technical report describes code-agent evaluation with a minimal tool set consisting of Bash and a file-edit tool. The public Harness minimal preset similarly uses persistent Bash and `str_replace_editor`.
+DeepSeek's V4 technical report describes code-agent evaluation with a minimal tool set consisting of Bash and a file-edit tool. Early public Harness Minimal presets used persistent Bash plus `str_replace_editor`; the current release exposes only one persistent shell. The historical two-tool alignment is not the current tool catalog.
 
 Native Windows remains supported by Harness. WSL2 is recommended here because it gives Windows users Linux paths, permissions, signals, shell behavior, and common SWE/terminal tooling. It is a reproducibility and compatibility choice—not a model inference optimization.
 
@@ -40,7 +49,7 @@ Microsoft currently documents WSL2's default VM **limit** as 50% of Windows RAM,
 
 DeepSeek has not published a supported Harness RAM minimum, a per-session RAM figure, or a formula for several simultaneous conversations. Therefore this project does not label `memory=2GB` as recommended. A fixed 2 GiB cap may be enough for a light UI session on one machine and still fail when agent subprocesses compile native modules, run tests, or work in several active sessions; there is no official guarantee either way.
 
-Official engineering notes illustrate why a chat-count formula would mislead: one measurement attributed about 1.31 MB to each live standard agent and 57.8 MB to 50 such agents, while a separate restore profile for a 1.3-million-event session reached about 1,060 MiB peak RSS after optimization. Those are implementation measurements, not requirements, and neither accounts for arbitrary shell tools, builds, tests, or language servers launched by an agent.
+Archived August 2026 engineering notes illustrate why a chat-count formula would mislead: one measurement attributed about 1.31 MB to each live standard agent and 57.8 MB to 50 such agents, while a separate restore profile for a 1.3-million-event session reached about 1,060 MiB peak RSS after optimization. Those are implementation measurements, not requirements, and neither accounts for arbitrary shell tools, builds, tests, or language servers launched by an agent.
 
 > [!CAUTION]
 > `%USERPROFILE%\.wslconfig` applies globally to all WSL2 distributions, not only Harness. A low cap can also constrain Docker Desktop or unrelated Linux work. This project reports whether that file exists but never reads, creates, merges, or overwrites it. Microsoft now recommends changing WSL resource settings through WSL Settings; make such a global change only after observing the actual workload.
@@ -83,7 +92,7 @@ DeepSeek's official distinction matters here: the published CLI is documented wi
 
 When pnpm is selected, the installer still uses npm bundled with the required Linux Node.js installation for registry identity, repository, dist-tag, and integrity checks. pnpm controls the global package transaction; it does not replace those verification steps.
 
-At the time this project was authored, npm's official `latest` tag still resolved to an RC build, which is why the example explicitly includes `-AcceptPrerelease`. Remove that switch when `latest` resolves to a stable release.
+As checked on 2026-10-04, npm's official `latest` tag resolves to `0.2.0-rc.2`, which is why the examples include `-AcceptPrerelease`. Remove that switch when `latest` resolves to a stable release.
 
 ### Fresh Windows installation is resumable, not magically reboot-free
 
@@ -113,7 +122,11 @@ cd ~/projects/your-project
 dsh web
 ```
 
-Open <http://127.0.0.1:3080>, select **Settings → Models**, and enter the DeepSeek API key there. The official UI treats keys as write-only and stores the credential under `$DSH_HOME/.credentials.yaml` while returning a redacted descriptor to the page.
+Open the authenticated startup URL printed by `dsh web`; local launches normally open it automatically. The default address is `http://127.0.0.1:3080`, but the first browser visit uses the process token in the printed URL to obtain a signed cookie. Do not share or commit that URL. Use `dsh web --no-open` to suppress browser opening.
+
+Select **Choose workspace**, add/select the intended project directory, then open **Settings → Models** and enter the DeepSeek API key locally. Saving a model route takes effect without restarting. Keys remain write-only in the UI and are stored under `$DSH_HOME/.credentials.yaml`.
+
+In `0.2.0-rc.2`, `--host 0.0.0.0` is explicitly rejected by the official Web startup code. Keep the default loopback binding. `--trusted-host` adds accepted host authorities; it does not replace authentication or change the listening interface. `--public-url` belongs to `0.2.1-alpha.1`, not this RC baseline.
 
 For Linux-heavy agent work, keep active repositories under the distribution's Linux filesystem, such as `~/projects`, rather than `/mnt/c` or `/mnt/e`. Cross-filesystem work is supported, but Git/npm workloads and Linux permission semantics are usually better on the WSL ext4 filesystem.
 
@@ -147,30 +160,21 @@ Use $deepseek-harness-wsl to verify that Node, npm, and dsh are Linux binaries a
 
 Start `dsh web`, create a session, and select **极简模式 / Minimal** in the Web UI. It is an agent preset, not a separate `dsh minimal` CLI command.
 
+In `0.2.0-rc.2`, Minimal exposes exactly one persistent shell: `bash` on Linux/macOS or `pwsh` on Windows. `str_replace_editor` is no longer mounted by default. The fixed complete persona and absence of compaction remain; this is separate from the standalone `sdk-minimal` profile.
+
 The preset intentionally presents a very small model-facing surface. Better results in that surface may reflect distribution matching, tool protocol, reasoning-trace handling, context policy, or shell behavior. Calling it proven "overfitting" requires controlled cross-harness ablations that are not currently public.
 
-## Experimental anchored modes
+## Historical Anchored experiment
 
-Later community work suggests that the effect may involve the complete **first model request**: persona, tool catalog, output limit, and automatically injected context—not merely one system-prompt sentence. An Anchored Standard experiment exposed only Bash/`read` on request one and restored the full Standard catalog after the first tool call or reply. It scored 98 and 99 in two runs of one private frozen task. That is a useful lead, not a general benchmark or proof of a DeepSeek training bug.
-
-This project therefore includes an opt-in generator for separate copies of the currently installed official presets:
-
-- `Anchored Standard`: supported by the two community runs above;
-- `Anchored PTC / Code`: an unbenchmarked extrapolation of the mechanism;
-- `Anchored Cordis / Creator`: a diagnostic extrapolation that also loses Cordis's specialized system persona, so it is not recommended as a daily default.
-
-This is a script rather than a prompt template because an ordinary prompt cannot change the API-visible tool schema, first-request `max_tokens`, or Harness context injection. The generator never edits shipped presets or `node_modules`; it can regenerate managed copies after a Harness update.
+The opt-in Anchored generator targets the older directory-based `config/agent-presets/<id>` format. Current `0.2.0-rc.2` uses bundle patch declarations and no longer ships that directory. The helper reports this boundary in `status` and refuses `install`/`update`, including previews. It does not migrate old copies into current profiles.
 
 ```powershell
-# Inspect and preview first; name -Distribution when multiple distros exist.
 powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\manage-anchored-presets.ps1 -Action status -Distribution Ubuntu -Mode all
-powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\manage-anchored-presets.ps1 -Action install -Distribution Ubuntu -Mode all -WhatIf
-
-# Install after accepting the experimental limits.
-powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\manage-anchored-presets.ps1 -Action install -Distribution Ubuntu -Mode all -Yes
+# Explicitly remove only legacy copies carrying this helper's ownership manifest.
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\manage-anchored-presets.ps1 -Action uninstall -Distribution Ubuntu -Mode all -Yes
 ```
 
-Fully restart `dsh web`, create a blank session, and select an anchored preset. Do not switch an existing session into one. See [anchored-presets.md](deepseek-harness-wsl/references/anchored-presets.md) for mechanics, evidence tiers, updates, and removal boundaries.
+The earlier Standard experiment reported 98 and 99 on two runs of one private task; it does not validate current DSH or the Code/Cordis extrapolations. Historical mechanics and legacy commands remain in [anchored-presets.md](deepseek-harness-wsl/references/anchored-presets.md). Use current official presets for the RC baseline.
 
 ## Safe updates and rollback
 
@@ -192,7 +196,7 @@ The helper does not blindly execute `npx @latest`. It:
 Roll back to a known exact version:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\setup-deepseek-harness-wsl.ps1 -Action install -PackageVersion 0.1.0-rc.6 -AcceptPrerelease -Yes
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scripts\setup-deepseek-harness-wsl.ps1 -Action install -PackageVersion 0.2.0-rc.1 -AcceptPrerelease -Yes
 ```
 
 ## Parameters
@@ -204,7 +208,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scrip
 | `-Action update` | Resolve and install the selected current channel |
 | `-Action uninstall` | Remove only Harness through the selected manager; preserve data, Node, distro, and WSL |
 | `-Distribution <name>` | Use one exact installed WSL distribution |
-| `-Channel latest\|next` | Select an npm dist-tag before exact-version resolution |
+| `-Channel latest\|next\|alpha` | Select an npm dist-tag before exact-version resolution |
 | `-PackageManager auto\|npm\|pnpm` | Preserve the recorded manager; otherwise use existing usable Linux pnpm or fall back to npm |
 | `-PackageVersion <semver>` | Install one exact version |
 | `-FetchRetries 0..10` | Fetch retries for this run only; default 4 |
@@ -212,7 +216,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\deepseek-harness-wsl\scrip
 | `-NetworkConcurrency 1..50` | Registry connections for this run; default 15, lower for an unstable link |
 | `-DownloadAttempts 1..3` | Attempts for the same verified exact version; default 2 |
 | `-NativeBuildTools auto\|skip` | Preflight Ubuntu native build requirements, or explicitly skip them |
-| `-AcceptPrerelease` | Explicitly allow RC/beta versions |
+| `-AcceptPrerelease` | Explicitly allow RC/beta/alpha versions |
 | `-Yes` | Accept the displayed package/prerequisite changes |
 | `-WhatIf` | Preview mutations; metadata checks may still use the network |
 | `-SkipNodeInstall` | Require a compatible existing Linux Node.js |
@@ -350,11 +354,11 @@ Removing Node.js, user settings, a WSL distribution, or WSL itself is intentiona
 ## Sources
 
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
-- [DeepSeek Harness native Windows implementation note](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/feature/2026-08-01-windows-pwsh-default.md)
-- [DeepSeek Harness source development prerequisites](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/development.md)
-- [DeepSeek per-session agent measurements](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-08-03-per-session-agent-presets.md)
-- [DeepSeek large-session restore measurements](https://github.com/deepseek-ai/deepseek-harness/blob/master/.agents/notes/implemented/architecture/2026-08-05-large-session-jsonl-restore-pipeline.md)
-- [Harness CLI behavior reference](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/cli/reference/README.md)
+- [DeepSeek Harness native Windows implementation note](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/.agents/notes/archived/feature/2026-08-01-windows-pwsh-default.md)
+- [DeepSeek Harness source development prerequisites](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/docs/development.md)
+- [DeepSeek per-session agent measurements](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/.agents/notes/archived/architecture/2026-08-03-per-session-agent-presets.md)
+- [DeepSeek large-session restore measurements](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/.agents/notes/archived/architecture/2026-08-05-large-session-jsonl-restore-pipeline.md)
+- [Harness CLI behavior reference](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.0-rc.2/apps/cli/reference/README.md)
 - [DeepSeek V4 technical report](https://arxiv.org/html/2606.19348v1)
 - [Microsoft: Install WSL](https://learn.microsoft.com/windows/wsl/install)
 - [Microsoft: Advanced WSL settings and current defaults](https://learn.microsoft.com/windows/wsl/wsl-config)

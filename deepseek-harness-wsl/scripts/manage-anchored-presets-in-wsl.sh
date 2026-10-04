@@ -39,7 +39,7 @@ confirm() {
 
 package_is_official() {
   local candidate="$1"
-  [[ -r $candidate/package.json && -d $candidate/config/agent-presets ]] || return 1
+  [[ -r $candidate/package.json ]] || return 1
   [[ $(node -e 'const p=require(process.argv[1]);process.stdout.write(p.name||"")' "$candidate/package.json" 2>/dev/null) == '@deepseek-ai/dsh' ]]
 }
 
@@ -62,8 +62,12 @@ find_package_root() {
   return 1
 }
 
-PACKAGE_ROOT=$(find_package_root)
-HARNESS_VERSION=$(node -e 'const p=require(process.argv[1]);process.stdout.write(p.version||"unknown")' "$PACKAGE_ROOT/package.json")
+PACKAGE_ROOT=''
+HARNESS_VERSION='not required for removal'
+if [[ $ACTION != uninstall ]]; then
+  PACKAGE_ROOT=$(find_package_root)
+  HARNESS_VERSION=$(node -e 'const p=require(process.argv[1]);process.stdout.write(p.version||"unknown")' "$PACKAGE_ROOT/package.json")
+fi
 DSH_HOME_RESOLVED=${DSH_HOME:-"$HOME/.dsh"}
 case "$DSH_HOME_RESOLVED" in /*) ;; *) printf 'DSH_HOME must be an absolute Linux path.\n' >&2; exit 4 ;; esac
 case "$DSH_HOME_RESOLVED" in /mnt/*) printf 'Refusing to manage agent presets on a Windows-mounted path.\n' >&2; exit 4 ;; esac
@@ -83,7 +87,15 @@ source_hash() {
 
 show_status() {
   local mode="$1" source="$PACKAGE_ROOT/config/agent-presets/$mode" target="$PRESET_PARENT/anchored-$mode"
-  [[ -r $source/agent.cordis.yml ]] || { printf '%s: official source preset is missing\n' "$mode"; return; }
+  if [[ ! -r $source/agent.cordis.yml ]]; then
+    printf '%s: legacy source layout unavailable; anchored generation is unsupported on this release\n' "$mode"
+    if is_managed_target "$target"; then
+      printf '%s: legacy managed copy remains; it is not verified for this release (uninstall can remove it)\n' "$mode"
+    elif [[ -e $target ]]; then
+      printf '%s: unmanaged target exists; it will not be overwritten or removed\n' "$mode"
+    fi
+    return
+  fi
   if ! is_managed_target "$target"; then
     if [[ -e $target ]]; then printf '%s: unmanaged target exists; it will not be overwritten\n' "$mode"
     else printf '%s: not installed\n' "$mode"; fi
@@ -158,6 +170,10 @@ printf 'Preset root:  %s\n' "$PRESET_PARENT"
 case "$ACTION" in
   status) for mode in "${MODES[@]}"; do show_status "$mode"; done ;;
   install|update)
+    if [[ ! -d $PACKAGE_ROOT/config/agent-presets ]] || [[ $HARNESS_VERSION =~ ^0\.([2-9]|[1-9][0-9]+)\. || $HARNESS_VERSION =~ ^[1-9][0-9]*\. ]]; then
+      printf 'Anchored generation is unsupported for Harness %s: current presets use bundle patch declarations. No preset was changed. See references/anchored-presets.md.\n' "$HARNESS_VERSION" >&2
+      exit 4
+    fi
     ((DRY_RUN)) || confirm "Generate experimental anchored preset(s): ${MODES[*]}?" || { printf 'Cancelled.\n'; exit 0; }
     ((DRY_RUN)) || preflight_all
     for mode in "${MODES[@]}"; do install_one "$mode"; done
